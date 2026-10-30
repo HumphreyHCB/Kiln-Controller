@@ -82,6 +82,7 @@ ControlDecision KilnControlLogic::decide(
     bool heaterIsOn,
     bool humidifierIsOn) const
 {
+    // return for sensor error
     const auto offForFault = ControlDecision{
         ControlAction::TurnOff,
         ControlAction::TurnOff,
@@ -92,12 +93,14 @@ ControlDecision KilnControlLogic::decide(
         return offForFault;
     }
 
+    // is the reading time recent or invaild
     const auto now = std::chrono::steady_clock::now();
     if (reading->receivedAt > now ||
         now - reading->receivedAt > maxReadingAge_) {
         return offForFault;
     }
 
+    // are the temperature and humidity abs numbers
     if (!std::isfinite(reading->temperature) ||
         !std::isfinite(reading->humidity) ||
         reading->humidity < 0.0 || reading->humidity > 100.0) {

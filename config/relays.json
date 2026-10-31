@@ -1,0 +1,5 @@
+{
+  "heaterRelay": 1,
+  "humidifierRelay": 2,
+  "fanRelay":3
+}

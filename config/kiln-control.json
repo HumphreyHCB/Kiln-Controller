@@ -1,7 +1,7 @@
 {
   "temperature": {
-    "min": 20.0,
-    "max": 25.0,
+    "min": 30.0,
+    "max": 35.0,
     "stopBeforeMax": 1.5
   },
   "humidity": {

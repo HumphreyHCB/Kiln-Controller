@@ -1,200 +1,138 @@
-
 #include "RelayController.hpp"
 
-#include <iostream>
-#include <stdexcept>
+#include <cerrno>
+#include <cstring>
 #include <fstream>
-
+#include <stdexcept>
+#include <string>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 #include <nlohmann/json.hpp>
-#include <gpiod.hpp>
-
 
 namespace {
+constexpr const char* SOCKET_PATH = "/run/kiln-relay/relay.sock";
 
-int relayToGpio(int relayNumber)
-{
+int relayToGpio(int relayNumber) {
     switch (relayNumber) {
         case 1: return 26;
         case 2: return 19;
         case 3: return 13;
         case 4: return 6;
-
-        default:
-            throw std::invalid_argument("Invalid relay number");
+        default: throw std::invalid_argument("Invalid relay number");
     }
 }
+} // namespace
 
-} 
+// Each Relay object knows which controller owns its socket connection.
+RelayController::Relay::Relay(RelayController& owner) : owner_(owner) {}
 
-// receives a reference to the controller
-// that owns this particular relay.
-//
-// owner_ is a reference member, so it must be initialised
-// using the constructor's member initialiser list.
-RelayController::Relay::Relay(RelayController& owner)
-    : owner_(owner)
-{
-}
+void RelayController::Relay::On()  { owner_.set(*this, true); }
+void RelayController::Relay::Off() { owner_.set(*this, false); }
 
-
-void RelayController::Relay::On()
-{
-    owner_.set(*this, true);
-}
-
-
-// Same principle as On(), but pass false to turn OFF.
-void RelayController::Relay::Off()
-{
-    owner_.set(*this, false);
-}
-
-
-// Returns the last successfully commanded state.
-bool RelayController::Relay::IsOn() const
-{
-    return isOn_;
-}
-
-
+// This asks the master service for the ACTUAL commanded state and
+// refreshes its 10-second heartbeat. A frozen kiln sends no requests.
+bool RelayController::Relay::IsOn() const { return owner_.get(*this); }
 
 RelayController::RelayController(const std::string& configPath)
-    : Heater(*this),
-      Humidifier(*this),
-      Fan(*this)
+    : Heater(*this), Humidifier(*this), Fan(*this)
 {
-    // *this means the current RelayController object.
-
     std::ifstream file(configPath);
-
-    if (!file) {
-        throw std::runtime_error(
-            "Cannot open Relay control config: " + configPath
-        );
-    }
-
+    if (!file) throw std::runtime_error("Cannot open relay config: " + configPath);
     const nlohmann::json config = nlohmann::json::parse(file);
+    const int heater = relayToGpio(config.at("heaterRelay").get<int>());
+    const int humidifier = relayToGpio(config.at("humidifierRelay").get<int>());
+    const int fan = relayToGpio(config.at("fanRelay").get<int>());
+    if (heater == humidifier || heater == fan || humidifier == fan)
+        throw std::invalid_argument("Two devices assigned to the same relay");
 
-    const int heaterRelayNumber =
-        config.at("heaterRelay").get<int>();
+    Heater.gpio_ = heater;
+    Humidifier.gpio_ = humidifier;
+    Fan.gpio_ = fan;
 
-    const int humidifierRelayNumber =
-        config.at("humidifierRelay").get<int>();
-
-    const int fanRelayNumber =
-        config.at("fanRelay").get<int>();
-
-
-    // A physical relay must not be assigned to two devices.
-    if (heaterRelayNumber == humidifierRelayNumber ||
-        heaterRelayNumber == fanRelayNumber ||
-        humidifierRelayNumber == fanRelayNumber) {
-
-        throw std::invalid_argument(
-            "Multiple devices assigned to the same relay"
-        );
+    // Establish a persistent Unix socket connection to the GPIO owner.
+    // This socket closes automatically on process crash/SIGKILL.
+    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) throw std::runtime_error("Cannot create relay socket");
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    if (std::strlen(SOCKET_PATH) >= sizeof(address.sun_path)) {
+        ::close(fd);
+        throw std::runtime_error("Relay socket path too long");
     }
-
-
-    heatergpio_ = relayToGpio(heaterRelayNumber);
-    humidifiergpio_ = relayToGpio(humidifierRelayNumber);
-    fangpio_ = relayToGpio(fanRelayNumber);
-
-    Heater.gpio_ = heatergpio_;
-    Humidifier.gpio_ = humidifiergpio_;
-    Fan.gpio_ = fangpio_;
-
-
-
-    gpiod::line_settings settings;
-
-
-    // ACTIVE   = electrical LOW  = relay ON
-    // INACTIVE = electrical HIGH = relay OFF
-    // Start all three relays OFF.
-    settings.set_direction(gpiod::line::direction::OUTPUT)
-            .set_active_low(true)
-            .set_output_value(gpiod::line::value::INACTIVE);
-
-
-    // Request ownership of our three GPIO pins from Linux.
-    lines_.emplace(
-        gpiod::chip("/dev/gpiochip0")
-            .prepare_request()
-            .set_consumer("kiln-controller")
-            .add_line_settings(
-                gpiod::line::offsets{
-                    static_cast<unsigned int>(heatergpio_),
-                    static_cast<unsigned int>(humidifiergpio_),
-                    static_cast<unsigned int>(fangpio_)
-                },
-                settings
-            )
-            .do_request()
-    );
-
-
-    std::cout << "RelayController initialised.\n";
-    std::cout << "Heater GPIO: " << heatergpio_ << '\n';
-    std::cout << "Humidifier GPIO: " << humidifiergpio_ << '\n';
-    std::cout << "Fan GPIO: " << fangpio_ << '\n';
-    std::cout << "All relays initially OFF.\n";
-}
-
-
-
-void RelayController::set(Relay& relay, bool on)
-{
-    if (!lines_) {
-        throw std::runtime_error(
-            "GPIO lines have not been initialised"
-        );
+    std::strcpy(address.sun_path, SOCKET_PATH);
+    if (::connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        const std::string error = std::strerror(errno);
+        ::close(fd);
+        throw std::runtime_error("Cannot connect to relay master: " + error);
     }
+    socket_ = fd;
 
-    // Use libgpiod to change the GPIO output.
-    lines_->set_value(
-        static_cast<unsigned int>(relay.gpio_),
-        on ? gpiod::line::value::ACTIVE
-           : gpiod::line::value::INACTIVE
-    );
-
-    // Only update our stored state after the GPIO call
-    // succeeds without throwing an exception.
-    relay.isOn_ = on;
-}
-
-
-void RelayController::AllOff()
-{
-    if (!lines_) {
-        return;
-    }
-
-    // Set all three requested GPIO outputs to INACTIVE.
-    lines_->set_values(gpiod::line::value_mappings{
-        {static_cast<unsigned int>(heatergpio_),
-         gpiod::line::value::INACTIVE},
-
-        {static_cast<unsigned int>(humidifiergpio_),
-         gpiod::line::value::INACTIVE},
-
-        {static_cast<unsigned int>(fangpio_),
-         gpiod::line::value::INACTIVE}
-    });
-
-    Heater.isOn_ = false;
-    Humidifier.isOn_ = false;
-    Fan.isOn_ = false;
-}
-
-
-RelayController::~RelayController() noexcept
-{
+    // Bound requests so a missing/unresponsive service doesn't hang the kiln.
+    timeval timeout{};
+    timeout.tv_sec = 3;
+    ::setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    ::setsockopt(socket_, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
     try {
-        AllOff();
+        if (transact("PING") != "OK")
+            throw std::runtime_error("Relay master rejected PING");
+    } catch (...) {
+        ::close(socket_);
+        socket_ = -1;
+        throw;
     }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to turn relays OFF: "
-                  << e.what() << '\n';
+}
+
+// Request/response protocol: e.g. "ON 26\n" -> "OK\n".
+// The master service retains exclusive ownership of the GPIO pins.
+std::string RelayController::transact(const std::string& command) const {
+    if (socket_ < 0) throw std::runtime_error("Relay master not connected");
+    const std::string message = command + "\n";
+    size_t sent = 0;
+    while (sent < message.size()) {
+        ssize_t n = ::send(socket_, message.data() + sent, message.size() - sent, MSG_NOSIGNAL);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) throw std::runtime_error("Relay master write failed");
+        sent += static_cast<size_t>(n);
+    }
+    std::string reply;
+    while (reply.size() < 256) {
+        char ch = 0;
+        ssize_t n = ::recv(socket_, &ch, 1, 0);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) throw std::runtime_error("Relay master disconnected or timed out");
+        if (ch == '\n') break;
+        reply.push_back(ch);
+    }
+    if (reply.rfind("ERR", 0) == 0)
+        throw std::runtime_error("Relay master: " + reply);
+    return reply;
+}
+
+void RelayController::set(Relay& relay, bool on) {
+    const auto result = transact(std::string(on ? "ON " : "OFF ") + std::to_string(relay.gpio_));
+    if (result != "OK") throw std::runtime_error("Unexpected relay master reply: " + result);
+}
+
+bool RelayController::get(const Relay& relay) const {
+    const auto result = transact("GET " + std::to_string(relay.gpio_));
+    if (result == "1") return true;
+    if (result == "0") return false;
+    throw std::runtime_error("Unexpected relay master reply: " + result);
+}
+
+void RelayController::AllOff() {
+    if (transact("ALL_OFF") != "OK")
+        throw std::runtime_error("Relay master refused ALL_OFF");
+}
+
+RelayController::~RelayController() noexcept {
+    if (socket_ >= 0) {
+        // No contact with a live master? Closing the connection causes
+        // the master to force all outputs OFF itself.
+        try { AllOff(); } catch (...) {}
+        ::shutdown(socket_, SHUT_RDWR);
+        ::close(socket_);
+        socket_ = -1;
     }
 }

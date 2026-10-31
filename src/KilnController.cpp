@@ -2,6 +2,7 @@
 #include "TemperatureHumidityCollector.hpp"
 #include "KilnControlLogic.hpp"
 #include "RelayController.hpp"
+#include <thread>
 
 using namespace std;
 
@@ -43,15 +44,7 @@ int main()
         collector.start();
         while (true)
         {
-            std::cout << "\nPress Enter for latest reading, "
-                         "or q to quit: ";
-
-            std::string command;
-
-            if (!std::getline(std::cin, command) || command == "q")
-            {
-                break;
-            }
+            
 
             auto reading = collector.getLatestReading();
 
@@ -125,6 +118,8 @@ int main()
 
             std::cout << "Humidifier ON: "
                       << relays.Humidifier.IsOn() << '\n';
+
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
 
         relays.AllOff();

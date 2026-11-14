@@ -1,0 +1,35 @@
+name: Kiln monitoring tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "systemd/**"
+      - "tests/**"
+      - ".github/workflows/kiln-status-tests.yml"
+  push:
+    branches:
+      - "feature/github-kiln-status"
+    paths:
+      - "scripts/**"
+      - "systemd/**"
+      - "tests/**"
+      - ".github/workflows/kiln-status-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python syntax
+        run: python -m py_compile scripts/*.py tests/*.py
+      - name: Shell syntax
+        run: bash -n scripts/*.sh run_kiln_recovering.sh
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v

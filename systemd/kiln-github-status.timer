@@ -1,0 +1,12 @@
+[Unit]
+Description=Update GitHub kiln status every 20 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=20min
+AccuracySec=1min
+Persistent=true
+Unit=kiln-github-status.service
+
+[Install]
+WantedBy=timers.target

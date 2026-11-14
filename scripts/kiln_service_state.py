@@ -114,33 +114,32 @@ def mark_start():
 
 def mark_stop():
     state = read_state()
-    try:
-        # ExecStopPost may be called even when systemd ExecCondition skips
-        # this unit after a reboot. NEVER overwrite the old "running" marker
-        # from an earlier boot: it is our evidence of an unclean shutdown.
-        if (state.get("status") != "running"
-                or state.get("boot_id") != boot_id()):
-            return
+    # ExecStopPost may run on the next boot even when ExecCondition skipped
+    # startup. Never overwrite the prior boot's running marker: it provides
+    # evidence that the old run ended without a recorded clean stop.
+    if (state.get("status") != "running"
+            or state.get("boot_id") != boot_id()):
+        return
 
-        time = now_utc()
-        result = os.environ.get("SERVICE_RESULT", "unknown")
-        exit_code = os.environ.get("EXIT_CODE", "unknown")
-        exit_status = os.environ.get("EXIT_STATUS", "unknown")
-        # The recovery supervisor exits 130 when systemd deliberately stops it.
-        clean = result == "success" or (exit_code == "exited" and exit_status == "130")
-        if not clean:
-            add_event(state, {
-                "kind": "controller_service_failure",
-                "detected_utc": time,
-                "detail": f"systemd: {result}; exit: {exit_code} {exit_status}",
-            })
-        state.update({
-            "status": "stopped" if clean else "failed",
-            "last_change_utc": time, "last_service_result": result,
-            "last_exit_code": exit_code, "last_exit_status": exit_status,
+    time = now_utc()
+    result = os.environ.get("SERVICE_RESULT", "unknown")
+    exit_code = os.environ.get("EXIT_CODE", "unknown")
+    exit_status = os.environ.get("EXIT_STATUS", "unknown")
+    # The supervisor exits 130 when it handles a deliberate systemd stop.
+    clean = result == "success" or (exit_code == "exited" and exit_status == "130")
+    if not clean:
+        add_event(state, {
+            "kind": "controller_service_failure",
+            "detected_utc": time,
+            "detail": f"systemd: {result}; exit: {exit_code} {exit_status}",
         })
-        write_state(state)
-        print(f"[KILN LIFECYCLE] Controller stop recorded ({result}).", flush=True)
+    state.update({
+        "status": "stopped" if clean else "failed",
+        "last_change_utc": time, "last_service_result": result,
+        "last_exit_code": exit_code, "last_exit_status": exit_status,
+    })
+    write_state(state)
+    print(f"[KILN LIFECYCLE] Controller stop recorded ({result}).", flush=True)
 
 
 if __name__ == "__main__":

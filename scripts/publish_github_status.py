@@ -224,13 +224,28 @@ def report(now=None):
             return "OFF (confirmed by relay master)"
         return switch(row.get(column), fresh_row)
 
+    # A missing OFF check while heating is not a failed safety check.
+    # The independent GPIO owner is only queried when the kiln is stopped.
+    if controller or process:
+        off_check_status = "Not applicable — kiln is running"
+    elif armed:
+        off_check_status = "Not checked — kiln may be starting"
+    elif off_confirmed:
+        off_check_status = "Confirmed OFF — all four relay channels acknowledged"
+    else:
+        off_check_status = f"OFF not verified — {off_detail}"
+
+    startup_permission = ("Granted for this run — manual start authorised"
+                          if armed else
+                          "Not granted — manual start required")
+
     body = f"""# Kiln — live status
 
 ## {heading}
 
-**Startup interlock:** {'MANUALLY ARMED' if armed else 'LOCKED — heating cannot auto-start on reboot'}
+**Kiln startup permission:** {startup_permission} (always resets on Pi reboot)
 
-**Relay-master OFF check:** {'CONFIRMED' if off_confirmed else 'NOT CONFIRMED'} — {off_detail}
+**Relay OFF check (stopped kiln only):** {off_check_status}
 
 **Published:** {published}  
 **Latest measurement:** {measured}  
@@ -245,11 +260,11 @@ def report(now=None):
 | Heater commanded | **{relay_status('heater_on')}** |
 | Humidifier commanded | **{relay_status('humidifier_on')}** |
 | Fan commanded | **{relay_status('fan_on')}** |
-| Manual-start interlock | {'Armed (this boot)' if armed else 'Locked OFF'} |
-| Relay-master OFF confirmation | {'YES — ALL_OFF acknowledged and four channels report OFF' if off_confirmed else 'NO — ' + off_detail} |
-| Controller systemd service | {'Active' if controller else 'Inactive'} |
-| Kiln process | {'Present' if process else 'Absent'} |
-| Relay-master service | {'Active' if master else 'Inactive'} |
+| Kiln startup permission | {startup_permission} |
+| Relay OFF check (stopped kiln only) | {off_check_status} |
+| Kiln process supervisor (Linux service) | {'Running' if controller else 'Stopped'} |
+| Kiln C++ temperature/humidity controller | {'Running' if process else 'Stopped'} |
+| Independent safety controller (relay watchdog) | {'Running' if master else 'Not running'} |
 | Sensor fault | {'YES' if row.get('sensor_fault') == '1' else 'NO' if row.get('sensor_fault') == '0' else 'Unknown'} |
 
 ### Previous 20 minutes ({len(recent)} readings)

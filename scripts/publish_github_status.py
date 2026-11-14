@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only kiln CSV telemetry publisher for GitHub Issue #1.
+"""Kiln CSV telemetry publisher for GitHub Issue #1.
 
-This program never contacts the kiln relay socket or changes GPIO state.
+During stopped/unarmed periods this monitor explicitly requests ALL_OFF from
+the single-client relay master and checks its commanded state under the
+supervisor lock. It never commands a relay ON.
 Uses only Python's standard library.
 """
 import csv
@@ -207,7 +209,7 @@ def report(now=None):
     elif not armed and not controller:
         title = ("Kiln status — OFF VERIFIED · MANUAL START REQUIRED"
                  if off_confirmed else
-                 "Kiln status — CONTROLLER DISABLED · RELAYS UNVERIFIED")
+                 "Kiln status — CONTROLLER DISABLED · MANUAL START REQUIRED · RELAYS UNVERIFIED")
         heading = ("⏸️ CONTROLLER STOPPED — RELAY MASTER CONFIRMS OFF"
                    if off_confirmed else
                    "⚠️ CONTROLLER STOPPED — RELAY OFF NOT VERIFIED")

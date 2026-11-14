@@ -86,6 +86,14 @@ You cannot reliably tell whether an unclean reboot was caused by a mains failure
 
 **The monitor cannot report while power or internet is absent.** It updates the issue on the next successful check after boot (typically within 20 minutes, dependent on network/scheduling). GitHub Issue body edits are not guaranteed to push a notification to your phone; inspect Issue #1 when needed.
 
+## Understanding the GitHub status labels
+
+- **Kiln startup permission** — "Granted for this run" means the kiln was manually authorised during this boot. It switches to "Not granted — manual start required" when the controller stops or the Pi reboots; the permission is not remembered across reboots.
+- **Relay OFF check (stopped kiln only)** — "Not applicable — kiln is running" is normal: checking with ALL_OFF would interfere with heating. When the controller is stopped and disarmed, the monitor can command ALL_OFF and read back all four relay-master states. It then reports "Confirmed OFF" if acknowledged, or "OFF not verified" if the check fails. This verifies the *Pi-side commanded* state, not physical voltage or relay contacts.
+- **Kiln process supervisor (Linux service)** — the systemd unit managing the existing recovery supervisor script.
+- **Kiln C++ temperature/humidity controller** — the actual executable reading the Bluetooth beacon and making heating, humidification and fan decisions.
+- **Independent safety controller (relay watchdog)** — the separate GPIO-owner service running on the **same Raspberry Pi**. It maintains the 10-second heartbeat timeout and commands outputs OFF on disconnect. "Independent" means separate from the C++ control process, **not an independent hardware safety circuit**.
+
 ## Useful commands
 
 - **GitHub status:** `sudo systemctl start kiln-github-status.service`

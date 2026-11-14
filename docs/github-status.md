@@ -2,6 +2,8 @@
 
 **[Open the live kiln status Issue #1](https://github.com/HumphreyHCB/Kiln-Controller/issues/1)**
 
+This installation adds two independent services. **When the controller is stopped and unarmed, the status publisher also performs a guarded `ALL_OFF` request against the independent GPIO relay master.** The master acknowledges the write, and the publisher reads back the master's commanded state for GPIO 26, 19, 13 and 6. This is positive confirmation from the Pi-side GPIO owner, not merely an assumption from the controller being absent.
+
 This installation adds two independent services:
 
 1. **Kiln controller** — uses the existing C++ program and recovery supervisor, but **never starts automatically after any Pi reboot**. It must be re-armed locally by an operator.
@@ -94,7 +96,7 @@ You cannot reliably tell whether an unclean reboot was caused by a mains failure
 
 ## Safety limitations
 
-- GitHub monitoring is **read-only** and not a safety control. Last reported relay states are *commanded software states*, not electrical contact measurements; a stale report must not be presented as current.
+- GitHub monitoring does not command any relay ON, but when the kiln is stopped it explicitly requests `ALL_OFF` and checks the master's internal `GET` states. It does **not** interrupt an active supervisor: it first takes the supervisor's exclusive flock lock and checks the controller/process/interlock before contacting the master's single-client socket. This is not a safety control. The OFF verification means the GPIO owner accepted `ALL_OFF` and its software state reports OFF for all four pins. It does not independently measure voltage or contact position. If this verification fails or cannot safely run, the Issue reports **OFF NOT VERIFIED** rather than falsely claiming OFF. During normal operation, relay states come from the CSV and are commanded software states, not independent electrical contact measurements.
 - The GPIO relay-master's independent watchdog remains required. **A software-controlled relay on an active-low GPIO HAT is not proof of a safely isolated heater during boot.** The hardware must power up in a verified safe/off state, with an independent correctly rated high-temperature cutoff.
 - The live Issue and its history are in a **public GitHub repository**.
 - On disk corruption, a damaged SD card, lost files, or a failed systemd unit, even the post-boot report may not be delivered. An off-Pi heartbeat checker would be needed for alerts during an outage.

@@ -15,6 +15,8 @@ import sys
 import urllib.error
 import urllib.request
 
+from kiln_service_state import boot_id, read_state
+
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
 LOGS = ROOT / "logs"
@@ -98,6 +100,44 @@ def switch(value, trustworthy):
     return {"1": "ON", "0": "OFF"}.get(value, "UNKNOWN")
 
 
+def lifecycle_section():
+    """Display persistent start/stop history, including suspected unclean boots."""
+    state = read_state()
+    events = state.get("events", [])
+    if not isinstance(events, list):
+        events = []
+
+    current_boot = boot_id()
+    if (state.get("status") == "running" and current_boot
+            and state.get("boot_id") and state["boot_id"] != current_boot):
+        events = events + [{
+            "kind": "suspected_unclean_reboot",
+            "detected_utc": "Current boot (controller has not re-started)",
+            "detail": "Controller was running on a previous boot; no clean-stop record",
+            "previous_started_utc": state.get("started_utc"),
+        }]
+    if not events:
+        return "No unexpected interruptions have been recorded since tracking was enabled."
+
+    lines = []
+    names = {
+        "suspected_unclean_reboot": "⚠️ Possible unexpected power loss / reboot",
+        "previous_run_not_cleanly_closed": "⚠️ Previous controller run not cleanly closed",
+        "controller_service_failure": "⚠️ Controller service failed",
+    }
+    for entry in reversed(events[-5:]):
+        kind = entry.get("kind", "unknown")
+        description = names.get(kind, kind.replace("_", " "))
+        when = entry.get("detected_utc", "Unknown time")
+        detail = entry.get("detail", "")
+        last_measurement = entry.get("last_measurement_before_restart_utc")
+        line = f"- **{description}** — detected {when}. {detail}"
+        if last_measurement:
+            line += f"; last pre-restart CSV measurement: {last_measurement}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def report(now=None):
     now = now or dt.datetime.now(UTC)
     path, rows = latest_csv()
@@ -167,6 +207,10 @@ def report(now=None):
 | Humidifier ON (% of samples) | {display(duty('humidifier_on'), '%', 1)} |
 | Fan ON (% of samples) | {display(duty('fan_on'), '%', 1)} |
 | Sensor-fault samples | {sum(r.get('sensor_fault') == '1' for r in recent)} |
+
+### Shutdown and restart history
+
+{lifecycle_section()}
 
 **Checks:** {'; '.join(problems) if problems else 'No issues detected'}  
 **Source CSV:** \`{path.name if path else 'none'}\`

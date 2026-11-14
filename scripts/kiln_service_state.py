@@ -15,7 +15,6 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "logs/kiln_controller_lifecycle.json"
 BOOT_ID_FILE = Path("/proc/sys/kernel/random/boot_id")
-ARM_FILE = Path("/run/kiln-controller-manual-arm")  # tmpfs: intentionally absent after every reboot
 UTC = dt.timezone.utc
 
 
@@ -114,8 +113,8 @@ def mark_start():
 
 
 def mark_stop():
+    state = read_state()
     try:
-        state = read_state()
         # ExecStopPost may be called even when systemd ExecCondition skips
         # this unit after a reboot. NEVER overwrite the old "running" marker
         # from an earlier boot: it is our evidence of an unclean shutdown.
@@ -142,10 +141,6 @@ def mark_stop():
         })
         write_state(state)
         print(f"[KILN LIFECYCLE] Controller stop recorded ({result}).", flush=True)
-    finally:
-        # Any completed service run must require another manual action to start.
-        # On a power cut this volatile /run marker disappears automatically.
-        ARM_FILE.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

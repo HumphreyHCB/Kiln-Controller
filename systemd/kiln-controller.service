@@ -8,10 +8,13 @@ Wants=bluetooth.service
 Type=simple
 User=humphrey
 WorkingDirectory=/home/humphrey/repos/Kiln-Controller
+# Fail closed on every boot: /run is volatile and only the manual start helper arms it.
+ExecCondition=/usr/bin/test -f /run/kiln-controller-manual-arm
 ExecStartPre=/usr/bin/python3 /home/humphrey/repos/Kiln-Controller/scripts/kiln_service_state.py start
 ExecStart=/usr/bin/bash /home/humphrey/repos/Kiln-Controller/run_kiln_recovering.sh
 ExecStopPost=/usr/bin/python3 /home/humphrey/repos/Kiln-Controller/scripts/kiln_service_state.py stop
 Restart=no
+# No Restart=always or Restart=on-failure: intervention is required after errors.
 TimeoutStopSec=30
 KillMode=control-group
 

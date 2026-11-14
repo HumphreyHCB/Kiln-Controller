@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from kiln_service_state import boot_id, read_state, last_csv_measurement
+from verify_relays_off import confirm_off
 
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
@@ -160,6 +161,21 @@ def report(now=None):
         and bool(boot_id()) and bool(lifecycle.get("boot_id"))
         and lifecycle["boot_id"] != boot_id()
     )
+    # The inactive controller alone is not proof the GPIO outputs were set OFF.
+    # Only contact the single-client relay master when the controller is stopped.
+    off_confirmed = False
+    off_detail = "Not checked while kiln controller may be operating"
+    if not controller and not process and not armed:
+        if master:
+            def safe_to_contact_master():
+                return (not active_service("kiln-controller.service")
+                        and not kiln_alive()
+                        and not ARM_FILE.is_file()
+                        and active_service("kiln-relay-master.service"))
+            off_confirmed, off_detail = confirm_off(safe_to_contact_master)
+        else:
+            off_detail = "UNVERIFIED: relay-master service is not active"
+
     good = controller and master and process and fresh_row and fresh_sensor and armed
 
     problems = []
@@ -185,21 +201,34 @@ def report(now=None):
     measured = recorded.strftime("%Y-%m-%d %H:%M:%S UTC") if recorded else "None"
     if previous_boot_interrupted and not controller:
         title = "Kiln status — UNEXPECTED REBOOT · MANUAL RESTART REQUIRED"
-        heading = "🚨 POSSIBLE UNEXPECTED POWER LOSS — KILN LOCKED OFF"
+        heading = ("🚨 POSSIBLE UNEXPECTED POWER LOSS — ALL_OFF CONFIRMED"
+                   if off_confirmed else
+                   "🚨 POSSIBLE UNEXPECTED POWER LOSS — RELAY STATE UNVERIFIED")
     elif not armed and not controller:
-        title = "Kiln status — OFF · MANUAL START REQUIRED"
-        heading = "⏸️ KILN OFF — MANUAL START REQUIRED"
+        title = ("Kiln status — OFF VERIFIED · MANUAL START REQUIRED"
+                 if off_confirmed else
+                 "Kiln status — CONTROLLER DISABLED · RELAYS UNVERIFIED")
+        heading = ("⏸️ CONTROLLER STOPPED — RELAY MASTER CONFIRMS OFF"
+                   if off_confirmed else
+                   "⚠️ CONTROLLER STOPPED — RELAY OFF NOT VERIFIED")
     elif good:
         title = "Kiln status — RUNNING"
         heading = "✅ RUNNING — telemetry healthy"
     else:
         title = "Kiln status — CHECK KILN"
         heading = "⚠️ CHECK KILN — telemetry or service fault"
+    def relay_status(column):
+        if off_confirmed:
+            return "OFF (confirmed by relay master)"
+        return switch(row.get(column), fresh_row)
+
     body = f"""# Kiln — live status
 
 ## {heading}
 
 **Startup interlock:** {'MANUALLY ARMED' if armed else 'LOCKED — heating cannot auto-start on reboot'}
+
+**Relay-master OFF check:** {'CONFIRMED' if off_confirmed else 'NOT CONFIRMED'} — {off_detail}
 
 **Published:** {published}  
 **Latest measurement:** {measured}  
@@ -211,10 +240,11 @@ def report(now=None):
 | Relative humidity | {display(number(row.get('humidity_percent')), '%', 2)} |
 | Pi CPU temperature | {display(number(row.get('cpu_temperature_c')), ' °C', 1)} |
 | Bluetooth reading age | {display(sensor_age, ' seconds', 1)} |
-| Heater commanded | **{switch(row.get('heater_on'), fresh_row)}** |
-| Humidifier commanded | **{switch(row.get('humidifier_on'), fresh_row)}** |
-| Fan commanded | **{switch(row.get('fan_on'), fresh_row)}** |
+| Heater commanded | **{relay_status('heater_on')}** |
+| Humidifier commanded | **{relay_status('humidifier_on')}** |
+| Fan commanded | **{relay_status('fan_on')}** |
 | Manual-start interlock | {'Armed (this boot)' if armed else 'Locked OFF'} |
+| Relay-master OFF confirmation | {'YES — ALL_OFF acknowledged and four channels report OFF' if off_confirmed else 'NO — ' + off_detail} |
 | Controller systemd service | {'Active' if controller else 'Inactive'} |
 | Kiln process | {'Present' if process else 'Absent'} |
 | Relay-master service | {'Active' if master else 'Inactive'} |
@@ -238,7 +268,7 @@ def report(now=None):
 **Checks:** {'; '.join(problems) if problems else 'No issues detected'}  
 **Source CSV:** \`{path.name if path else 'none'}\`
 
-> **Monitoring only.** A powered-off or disconnected Pi cannot update this Issue; check the published UTC timestamp. Reports more than ~40 minutes old are potentially stale. Relay values are software-commanded states, not verified electrical contacts. The controller service requires an explicit local manual start after any reboot. A power cut cannot be reported until power and internet return. The relay-master watchdog and a physical high-temperature cutoff are still essential.
+> **Monitoring only.** A powered-off or disconnected Pi cannot update this Issue; check the published UTC timestamp. Reports more than ~40 minutes old are potentially stale. OFF confirmation means the GPIO-owning relay master acknowledged an explicit ALL_OFF command and reported every configured relay OFF; it does NOT measure physical contacts or voltage. While the kiln runs, relay values come from the CSV's commanded states. The controller service requires an explicit local manual start after any reboot. A power cut cannot be reported until power and internet return. The relay-master watchdog and a physical high-temperature cutoff are still essential.
 
 <!-- KILN_STATUS_REPORT_UTC: {now.strftime('%Y-%m-%dT%H:%M:%SZ')} -->
 """

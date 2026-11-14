@@ -13,6 +13,8 @@ ExecCondition=/usr/bin/test -f /run/kiln-controller-manual-arm
 ExecStartPre=/usr/bin/python3 /home/humphrey/repos/Kiln-Controller/scripts/kiln_service_state.py start
 ExecStart=/usr/bin/bash /home/humphrey/repos/Kiln-Controller/run_kiln_recovering.sh
 ExecStopPost=/usr/bin/python3 /home/humphrey/repos/Kiln-Controller/scripts/kiln_service_state.py stop
+# Use root here because the interlock marker lives in root-owned /run.
+ExecStopPost=+/usr/bin/rm -f /run/kiln-controller-manual-arm
 Restart=no
 # No Restart=always or Restart=on-failure: intervention is required after errors.
 TimeoutStopSec=30

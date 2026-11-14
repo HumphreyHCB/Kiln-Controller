@@ -1,5 +1,5 @@
 {
-  "heaterRelay": 1,
+  "heaterRelay": 4,
   "humidifierRelay": 2,
   "fanRelay":3
 }

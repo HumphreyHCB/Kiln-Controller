@@ -82,7 +82,6 @@ ControlDecision KilnControlLogic::decide(
     bool heaterIsOn,
     bool humidifierIsOn) const
 {
-    // return for sensor error
     const auto offForFault = ControlDecision{
         ControlAction::TurnOff,
         ControlAction::TurnOff,
@@ -93,23 +92,32 @@ ControlDecision KilnControlLogic::decide(
         return offForFault;
     }
 
-    // is the reading time recent or invaild
     const auto now = std::chrono::steady_clock::now();
     if (reading->receivedAt > now ||
         now - reading->receivedAt > maxReadingAge_) {
         return offForFault;
     }
 
-    // are the temperature and humidity abs numbers
     if (!std::isfinite(reading->temperature) ||
         !std::isfinite(reading->humidity) ||
         reading->humidity < 0.0 || reading->humidity > 100.0) {
         return offForFault;
     }
 
+    // Temperature has priority. Humidification is allowed ONLY while the
+    // current temperature is within the configured temperature range.
+    // Below min: heat first. Above max: stop humidifying and let the kiln cool.
+    const bool temperatureInRange =
+        reading->temperature >= temperature_.min &&
+        reading->temperature <= temperature_.max;
+
+    const ControlAction humidityAction = temperatureInRange
+        ? decideOne(reading->humidity, humidity_, humidifierIsOn)
+        : (humidifierIsOn ? ControlAction::TurnOff : ControlAction::LeaveAsIs);
+
     return {
         decideOne(reading->temperature, temperature_, heaterIsOn),
-        decideOne(reading->humidity, humidity_, humidifierIsOn),
+        humidityAction,
         false
     };
 }

@@ -15,7 +15,7 @@ import sys
 import urllib.error
 import urllib.request
 
-from kiln_service_state import boot_id, read_state
+from kiln_service_state import boot_id, read_state, last_csv_measurement
 
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +24,7 @@ TOKEN_FILE = Path.home() / ".config/kiln/github-token"
 REPO = "HumphreyHCB/Kiln-Controller"
 ISSUE = 1
 WINDOW = 20 * 60
+ARM_FILE = Path("/run/kiln-controller-manual-arm")
 
 
 def active_service(name):
@@ -115,6 +116,7 @@ def lifecycle_section():
             "detected_utc": "Current boot (controller has not re-started)",
             "detail": "Controller was running on a previous boot; no clean-stop record",
             "previous_started_utc": state.get("started_utc"),
+            "last_measurement_before_restart_utc": last_csv_measurement(),
         }]
     if not events:
         return "No unexpected interruptions have been recorded since tracking was enabled."
@@ -151,7 +153,14 @@ def report(now=None):
     controller = active_service("kiln-controller.service")
     master = active_service("kiln-relay-master.service")
     process = kiln_alive()
-    good = controller and master and process and fresh_row and fresh_sensor
+    armed = ARM_FILE.is_file()
+    lifecycle = read_state()
+    previous_boot_interrupted = (
+        lifecycle.get("status") == "running"
+        and bool(boot_id()) and bool(lifecycle.get("boot_id"))
+        and lifecycle["boot_id"] != boot_id()
+    )
+    good = controller and master and process and fresh_row and fresh_sensor and armed
 
     problems = []
     if not controller: problems.append("kiln-controller.service inactive")
@@ -174,10 +183,23 @@ def report(now=None):
 
     published = now.strftime("%Y-%m-%d %H:%M:%S UTC")
     measured = recorded.strftime("%Y-%m-%d %H:%M:%S UTC") if recorded else "None"
-    title = "Kiln status — RUNNING" if good else "Kiln status — CHECK KILN"
+    if previous_boot_interrupted and not controller:
+        title = "Kiln status — UNEXPECTED REBOOT · MANUAL RESTART REQUIRED"
+        heading = "🚨 POSSIBLE UNEXPECTED POWER LOSS — KILN LOCKED OFF"
+    elif not armed and not controller:
+        title = "Kiln status — OFF · MANUAL START REQUIRED"
+        heading = "⏸️ KILN OFF — MANUAL START REQUIRED"
+    elif good:
+        title = "Kiln status — RUNNING"
+        heading = "✅ RUNNING — telemetry healthy"
+    else:
+        title = "Kiln status — CHECK KILN"
+        heading = "⚠️ CHECK KILN — telemetry or service fault"
     body = f"""# Kiln — live status
 
-## {'✅ RUNNING — telemetry healthy' if good else '⚠️ CHECK KILN — telemetry or service fault'}
+## {heading}
+
+**Startup interlock:** {'MANUALLY ARMED' if armed else 'LOCKED — heating cannot auto-start on reboot'}
 
 **Published:** {published}  
 **Latest measurement:** {measured}  
@@ -192,6 +214,7 @@ def report(now=None):
 | Heater commanded | **{switch(row.get('heater_on'), fresh_row)}** |
 | Humidifier commanded | **{switch(row.get('humidifier_on'), fresh_row)}** |
 | Fan commanded | **{switch(row.get('fan_on'), fresh_row)}** |
+| Manual-start interlock | {'Armed (this boot)' if armed else 'Locked OFF'} |
 | Controller systemd service | {'Active' if controller else 'Inactive'} |
 | Kiln process | {'Present' if process else 'Absent'} |
 | Relay-master service | {'Active' if master else 'Inactive'} |
@@ -215,7 +238,7 @@ def report(now=None):
 **Checks:** {'; '.join(problems) if problems else 'No issues detected'}  
 **Source CSV:** \`{path.name if path else 'none'}\`
 
-> **Monitoring only.** A powered-off or disconnected Pi cannot update this Issue; check the published UTC timestamp. Reports more than ~40 minutes old are potentially stale. Relay values are software-commanded states, not verified electrical contacts. Maintain the independent relay watchdog and a physical high-temperature cutoff.
+> **Monitoring only.** A powered-off or disconnected Pi cannot update this Issue; check the published UTC timestamp. Reports more than ~40 minutes old are potentially stale. Relay values are software-commanded states, not verified electrical contacts. The controller service requires an explicit local manual start after any reboot. A power cut cannot be reported until power and internet return. The relay-master watchdog and a physical high-temperature cutoff are still essential.
 
 <!-- KILN_STATUS_REPORT_UTC: {now.strftime('%Y-%m-%dT%H:%M:%SZ')} -->
 """

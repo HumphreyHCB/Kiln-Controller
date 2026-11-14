@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish read-only kiln readings to GitHub Issue
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=humphrey
+WorkingDirectory=/home/humphrey/repos/Kiln-Controller
+ExecStart=/usr/bin/python3 /home/humphrey/repos/Kiln-Controller/scripts/publish_github_status.py
+NoNewPrivileges=true
+PrivateTmp=true

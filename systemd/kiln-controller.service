@@ -1,0 +1,17 @@
+[Unit]
+Description=Kiln controller with bounded Bluetooth recovery
+Requires=kiln-relay-master.service
+After=kiln-relay-master.service bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=humphrey
+WorkingDirectory=/home/humphrey/repos/Kiln-Controller
+ExecStart=/usr/bin/bash /home/humphrey/repos/Kiln-Controller/run_kiln_recovering.sh
+Restart=no
+TimeoutStopSec=30
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

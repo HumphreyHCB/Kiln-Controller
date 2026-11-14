@@ -74,8 +74,26 @@ class MonitorTests(unittest.TestCase):
                           return_value="2026-11-14T11:35:00Z"):
             title, body = monitor.report(dt.datetime(2026,11,14,12,tzinfo=dt.timezone.utc))
             self.assertIn("UNEXPECTED REBOOT", title)
-            self.assertIn("LOCKED OFF", body)
+            self.assertIn("RELAY STATE UNVERIFIED", body)
             self.assertIn("2026-11-14T11:35:00Z", body)
+
+    def test_explicit_off_acknowledged_after_reboot(self):
+        with tempfile.TemporaryDirectory() as temp, \
+             patch.object(monitor, "LOGS", Path(temp)), \
+             patch.object(monitor, "ARM_FILE", Path(temp) / "arm"), \
+             patch.object(monitor, "active_service",
+                          side_effect=lambda name: name == "kiln-relay-master.service"), \
+             patch.object(monitor, "kiln_alive", return_value=False), \
+             patch.object(monitor, "confirm_off",
+                          return_value=(True, "ALL_OFF acknowledged; 4 GPIO channels OFF")), \
+             patch.object(monitor, "read_state", return_value={
+                 "status": "running", "boot_id": "old-boot"
+             }), \
+             patch.object(monitor, "boot_id", return_value="new-boot"):
+            title, body = monitor.report(dt.datetime(2026,11,14,12,tzinfo=dt.timezone.utc))
+            self.assertIn("UNEXPECTED REBOOT", title)
+            self.assertIn("ALL_OFF CONFIRMED", body)
+            self.assertIn("OFF (confirmed by relay master)", body)
 
     def test_orderly_reboot_still_requires_manual_start(self):
         with tempfile.TemporaryDirectory() as temp, \

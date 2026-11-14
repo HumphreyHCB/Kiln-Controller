@@ -15,6 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "logs/kiln_controller_lifecycle.json"
 BOOT_ID_FILE = Path("/proc/sys/kernel/random/boot_id")
+ARM_FILE = Path("/run/kiln-controller-manual-arm")  # tmpfs: intentionally absent after every reboot
 UTC = dt.timezone.utc
 
 
@@ -113,26 +114,38 @@ def mark_start():
 
 
 def mark_stop():
-    state = read_state()
-    if state.get("status") != "running":
-        return
-    time = now_utc()
-    result = os.environ.get("SERVICE_RESULT", "unknown")
-    exit_code = os.environ.get("EXIT_CODE", "unknown")
-    exit_status = os.environ.get("EXIT_STATUS", "unknown")
-    if result != "success":
-        add_event(state, {
-            "kind": "controller_service_failure",
-            "detected_utc": time,
-            "detail": f"systemd: {result}; exit: {exit_code} {exit_status}",
+    try:
+        state = read_state()
+        # ExecStopPost may be called even when systemd ExecCondition skips
+        # this unit after a reboot. NEVER overwrite the old "running" marker
+        # from an earlier boot: it is our evidence of an unclean shutdown.
+        if (state.get("status") != "running"
+                or state.get("boot_id") != boot_id()):
+            return
+
+        time = now_utc()
+        result = os.environ.get("SERVICE_RESULT", "unknown")
+        exit_code = os.environ.get("EXIT_CODE", "unknown")
+        exit_status = os.environ.get("EXIT_STATUS", "unknown")
+        # The recovery supervisor exits 130 when systemd deliberately stops it.
+        clean = result == "success" or (exit_code == "exited" and exit_status == "130")
+        if not clean:
+            add_event(state, {
+                "kind": "controller_service_failure",
+                "detected_utc": time,
+                "detail": f"systemd: {result}; exit: {exit_code} {exit_status}",
+            })
+        state.update({
+            "status": "stopped" if clean else "failed",
+            "last_change_utc": time, "last_service_result": result,
+            "last_exit_code": exit_code, "last_exit_status": exit_status,
         })
-    state.update({
-        "status": "stopped" if result == "success" else "failed",
-        "last_change_utc": time, "last_service_result": result,
-        "last_exit_code": exit_code, "last_exit_status": exit_status,
-    })
-    write_state(state)
-    print(f"[KILN LIFECYCLE] Controller stop recorded ({result}).", flush=True)
+        write_state(state)
+        print(f"[KILN LIFECYCLE] Controller stop recorded ({result}).", flush=True)
+    finally:
+        # Any completed service run must require another manual action to start.
+        # On a power cut this volatile /run marker disappears automatically.
+        ARM_FILE.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

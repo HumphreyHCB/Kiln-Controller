@@ -25,5 +25,26 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           COMMENT_ID: ${{ github.event.comment.id }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" \
-            --body "@HumphreyHCB A kiln event was recorded. [View the startup/fault details](https://github.com/$GH_REPO/issues/$ISSUE_NUMBER#issuecomment-$COMMENT_ID)."
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
+              event = json.load(stream)
+          original = event["comment"]["body"]
+          if "Kiln controller successfully started" in original:
+              summary = "✅ Kiln controller started successfully."
+          elif "Possible unexpected power loss" in original or "ended without a clean stop" in original:
+              summary = "🚨 Possible unexpected shutdown — kiln requires manual inspection."
+          else:
+              summary = "🚨 Kiln fault detected — check the controller."
+          repo = os.environ["GH_REPO"]
+          issue = os.environ["ISSUE_NUMBER"]
+          cid = os.environ["COMMENT_ID"]
+          url = f"https://github.com/{repo}/issues/{issue}#issuecomment-{cid}"
+          subprocess.run([
+              "gh", "issue", "comment", issue, "--repo", repo,
+              "--body", f"@HumphreyHCB {summary}\n\n[View event details]({url})",
+          ], check=True)
+          PY

@@ -19,6 +19,7 @@ import urllib.request
 
 from kiln_service_state import boot_id, read_state, last_csv_measurement
 from verify_relays_off import confirm_off
+from kiln_issue_notifications import notify
 
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
@@ -322,6 +323,8 @@ def main():
         raise RuntimeError("GitHub token file is empty")
     title, body = report()
     print("Updated", publish(title, body, token))
+    notify(title, body, token)
+    print("Event-only notification check complete")
 
 
 if __name__ == "__main__":

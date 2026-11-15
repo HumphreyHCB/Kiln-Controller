@@ -42,6 +42,12 @@ class MonitorTests(unittest.TestCase):
             self.assertIn("RUNNING", title)
             self.assertIn("42.00 °C", body)
             self.assertIn("**ON**", body)
+            self.assertIn("Kiln process supervisor (Linux service) | Running", body)
+            self.assertIn("Kiln C++ temperature/humidity controller | Running", body)
+            self.assertIn("Independent safety controller (relay watchdog) | Running", body)
+            self.assertIn("Not applicable — kiln is running", body)
+            self.assertIn("Granted for this run — manual start authorised", body)
+            self.assertNotIn("Relay-master OFF confirmation | NO", body)
 
     def test_stale_reading_never_reported_as_running(self):
         with tempfile.TemporaryDirectory() as temp, \
@@ -75,6 +81,8 @@ class MonitorTests(unittest.TestCase):
             title, body = monitor.report(dt.datetime(2026,11,14,12,tzinfo=dt.timezone.utc))
             self.assertIn("UNEXPECTED REBOOT", title)
             self.assertIn("RELAY STATE UNVERIFIED", body)
+            self.assertIn("OFF not verified", body)
+            self.assertNotIn("Relay-master OFF confirmation | NO", body)
             self.assertIn("2026-11-14T11:35:00Z", body)
 
     def test_explicit_off_acknowledged_after_reboot(self):
@@ -94,6 +102,8 @@ class MonitorTests(unittest.TestCase):
             self.assertIn("UNEXPECTED REBOOT", title)
             self.assertIn("ALL_OFF CONFIRMED", body)
             self.assertIn("OFF (confirmed by relay master)", body)
+            self.assertIn("Confirmed OFF — all four relay channels acknowledged", body)
+            self.assertIn("Not granted — manual start required", body)
 
     def test_orderly_reboot_still_requires_manual_start(self):
         with tempfile.TemporaryDirectory() as temp, \

@@ -1,0 +1,29 @@
+name: Kiln event notifications
+
+# Only Issue comments trigger this workflow. Normal 20-minute Issue edits
+# do not start any notification Actions runs.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  notify-owner:
+    if: >-
+      github.event.issue.number == 1 &&
+      github.event.comment.user.login == 'HumphreyHCB' &&
+      contains(github.event.comment.body, '<!-- KILN_EVENT_NOTIFY:')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mention owner from GitHub Actions bot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" \
+            --body "@HumphreyHCB A kiln event was recorded. [View the startup/fault details](https://github.com/$GH_REPO/issues/$ISSUE_NUMBER#issuecomment-$COMMENT_ID)."

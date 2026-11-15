@@ -166,7 +166,7 @@ def notify(title, issue_body, token, *, now=None):
     # Preserve alert about a power cut across reboots, but notify only once
     # for the specific old/new boot-ID pair.
     if unclean and current_boot and prior_boot and prior_boot != current_boot:
-        queue(state, "unclean:" + event_key({"old": prior_boot, "new": current_boot}),
+        queue(state, "unclean-run:" + event_key({"started": lifecycle.get("started_utc") or prior_boot}),
               "### 🚨 Possible unexpected power loss / system reboot\n\n"
               f"**Detected:** {now.isoformat(timespec='seconds')}  \n"
               "**Previous controller state:** Running without a clean stop record  \n"
@@ -195,7 +195,7 @@ def notify(title, issue_body, token, *, now=None):
                   "**Action:** Check the controller and independent relay watchdog. "
                   "The kiln will not restart automatically.")
         elif kind in ("suspected_unclean_reboot", "previous_run_not_cleanly_closed"):
-            queue(state, "lifecycle-unclean:" + event_id,
+            queue(state, "unclean-run:" + event_key({"started": event.get("previous_started_utc") or event_id}),
                   "### 🚨 Previous kiln run ended without a clean stop\n\n"
                   f"**Detected:** {event.get('detected_utc', 'Unknown')}  \n"
                   f"**Last measurement:** {event.get('last_measurement_before_restart_utc') or 'Unknown'}  \n"

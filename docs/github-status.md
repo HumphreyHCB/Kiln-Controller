@@ -94,6 +94,33 @@ You cannot reliably tell whether an unclean reboot was caused by a mains failure
 - **Kiln C++ temperature/humidity controller** — the actual executable reading the Bluetooth beacon and making heating, humidification and fan decisions.
 - **Independent safety controller (relay watchdog)** — the separate GPIO-owner service running on the **same Raspberry Pi**. It maintains the 10-second heartbeat timeout and commands outputs OFF on disconnect. "Independent" means separate from the C++ control process, **not an independent hardware safety circuit**.
 
+## Alerts and GitHub notifications
+
+The ordinary **20-minute status refresh only edits Issue #1**; it does not create a comment, commit, push, or notification workflow run. Relay ON/OFF changes during normal regulation never create alert comments.
+
+**Significant events** do create Issue comments:
+
+- **Successful controller start** — once after a *new* service run has working Bluetooth telemetry and a healthy supervisor and relay master. An already-running kiln is treated as a baseline when the feature is first installed.
+- **Unexpected controller stop / service failure** — once per new failed service exit, even if the process stops between two report intervals.
+- **Suspected unexpected Pi reboot** — once per interrupted run after power and internet return. This does not establish the cause of the interruption.
+- **CHECK KILN or OFF not verified** — once when a fault condition is first observed, not every reporting cycle. A cleared and later recurring fault generates a new alert.
+
+Normal operation and deliberate stops remain silent.
+
+### How a GitHub notification reaches the owner
+
+The Pi uses a fine-grained personal access token from the owner's account, so comments authored by the Pi **as that same account** normally do not notify the owner.
+
+A separate GitHub Actions workflow at .github/workflows/kiln-event-notifications.yml runs **only** after a new event comment from HumphreyHCB on Issue #1. The GitHub Actions bot then posts a short comment with an **@HumphreyHCB mention** linking directly to the incident. Normal 20-minute Issue body edits never trigger that workflow. The workflow ignores its own bot comments.
+
+Each significant event therefore leaves **two Issue comments**: detailed event information from the Pi, then a bot mention pointing to it. The Pi token still requires only **Issues: Read and write**. GitHub Actions uses the built-in workflow token with **Issues: write**.
+
+Enable web/email/mobile notifications under [GitHub notification settings](https://github.com/settings/notifications), and enable GitHub Mobile push notifications on your phone if wanted. GitHub may group, delay or suppress notifications depending on the account/device settings. This is **not an emergency paging system**.
+
+**Latency:** new events are detected at the next monitor run (currently up to about 20 minutes plus networking). The Pi cannot notify anyone while it is powered off or offline. A failed comment request is persisted locally and retried on later timer runs. If you need an alert while the Pi is offline, use a separate off-Pi heartbeat monitor.
+
+The local event checkpoint is stored at logs/kiln_github_notification_state.json (inside the ignored logs directory), so ordinary 20-minute updates do not produce duplicate alerts.
+
 ## Useful commands
 
 - **GitHub status:** `sudo systemctl start kiln-github-status.service`

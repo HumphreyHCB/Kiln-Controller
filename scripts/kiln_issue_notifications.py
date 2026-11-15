@@ -143,7 +143,7 @@ def notify(title, issue_body, token, *, now=None):
     if not state.get("initialized"):
         state = {
             "initialized": True, "sent": [], "pending": [],
-            "last_successful_run": current_run if healthy else None,
+            "last_successful_run": current_run,
             "last_fault_active": False,
             "seen_lifecycle": [
                 event_key(e) for e in lifecycle.get("events", [])

@@ -1,12 +1,12 @@
 {
   "temperature": {
-    "min": 38.0,
-    "max": 46.0,
-    "stopBeforeMax": 2.5
+    "min": 40.5,
+    "max": 48.0,
+    "stopBeforeMax": 1.5
   },
   "humidity": {
     "min": 70.0,
-    "max": 80.0,
+    "max": 78.0,
     "stopBeforeMax": 5.0
   },
   "maxReadingAgeSeconds": 60

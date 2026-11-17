@@ -3,6 +3,8 @@ name: Kiln monitoring tests
 on:
   pull_request:
     paths:
+      - "src/**"
+      - "config/**"
       - "scripts/**"
       - "systemd/**"
       - "tests/**"
@@ -10,6 +12,7 @@ on:
   push:
     branches:
       - "feature/github-kiln-status"
+      - "feature/heater-on-time-watchdog"
     paths:
       - "scripts/**"
       - "systemd/**"
@@ -33,3 +36,16 @@ jobs:
         run: bash -n scripts/*.sh run_kiln_recovering.sh
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Heater watchdog and configurable fan C++ tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I src tests/test_heater_on_time_watchdog.cpp -o /tmp/kiln-heater-watchdog-tests
+          /tmp/kiln-heater-watchdog-tests
+      - name: Install C++ build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdbus-c++-dev libgpiod-dev nlohmann-json3-dev
+      - name: Build kiln C++ executable
+        run: |
+          cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-ci --parallel
+

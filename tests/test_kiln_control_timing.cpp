@@ -29,10 +29,12 @@ int main()
     // But after a continuous 60-minute ON period the watchdog forces OFF.
     HeaterOnTimeWatchdog watchdog(logic.maxContinuousHeaterOn());
     const auto t0 = Clock::now();
-    watchdog.observe(t0, true);
-    assert(watchdog.shouldForceOff(t0 + 60min, true, true,
+    watchdog.observe(t0, true, true, false);
+    assert(!watchdog.shouldForceOff(t0 + 60min, true, true, false));
+    watchdog.observe(t0 + 60min, true, true, true);
+    assert(watchdog.shouldForceOff(t0 + 120min, true, true,
                                     logic.temperatureInRange(reading.temperature)));
-    watchdog.observe(t0 + 60min, false);
+    watchdog.observe(t0 + 120min, false, true, true);
 
     // After forcing OFF, existing hysteresis holds OFF until below minimum.
     assert(logic.decide(reading, false, false).heater == ControlAction::LeaveAsIs);

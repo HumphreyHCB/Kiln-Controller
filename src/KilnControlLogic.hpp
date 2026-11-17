@@ -34,6 +34,20 @@ public:
         bool humidifierIsOn
     ) const;
 
+    // Runtime settings are loaded once from kiln-control.json at startup.
+    [[nodiscard]] std::chrono::minutes maxContinuousHeaterOn() const {
+        return maxContinuousHeaterOn_;
+    }
+    [[nodiscard]] std::chrono::minutes fanOffBeforePulse() const {
+        return fanOffBeforePulse_;
+    }
+    [[nodiscard]] std::chrono::minutes fanPulseLength() const {
+        return fanPulseLength_;
+    }
+    [[nodiscard]] bool temperatureInRange(double temperature) const {
+        return temperature >= temperature_.min && temperature <= temperature_.max;
+    }
+
 private:
     struct Range {
         double min;
@@ -44,6 +58,9 @@ private:
     Range temperature_{};
     Range humidity_{};
     std::chrono::seconds maxReadingAge_{60};
+    std::chrono::minutes maxContinuousHeaterOn_{60};
+    std::chrono::minutes fanOffBeforePulse_{20};
+    std::chrono::minutes fanPulseLength_{5};
 
     static ControlAction decideOne(
         double measured,

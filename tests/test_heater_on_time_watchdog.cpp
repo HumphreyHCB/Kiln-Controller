@@ -12,29 +12,35 @@ int main()
 {
     const Clock::time_point start{};
 
-    // The 60-minute timer starts when the heater actually turns ON.
     HeaterOnTimeWatchdog watchdog(60min);
-    assert(!watchdog.shouldForceOff(start, false, true, true));
-    watchdog.observe(start, true);
-    assert(!watchdog.shouldForceOff(start + 59min, true, true, true));
-    assert(!watchdog.shouldForceOff(start + 60min, true, true, false));
+    assert(!watchdog.shouldForceOff(start, false, true, false));
 
-    // Sensor faults do NOT allow this software timeout to authorize
-    // temperature-based decisions. The existing fault logic forces all OFF.
-    assert(!watchdog.shouldForceOff(start + 61min, true, false, true));
+    // Warm-up can take much longer than an hour. Do not begin the timer
+    // while the temperature is still below the minimum threshold.
+    watchdog.observe(start, true, true, false);
+    assert(!watchdog.shouldForceOff(start + 90min, true, true, false));
+    assert(!watchdog.shouldForceOff(start + 100min, true, false, true));
 
-    // Even after a slow warm-up, as soon as temperature is in the
-    // valid range after 60 minutes, the heater must be forced OFF.
-    assert(watchdog.shouldForceOff(start + 62min, true, true, true));
-    watchdog.observe(start + 62min, false);
+    // Timer starts at first fresh, in-range sample (100 minutes after ON).
+    assert(!watchdog.shouldForceOff(start + 100min, true, true, true));
+    assert(!watchdog.shouldForceOff(start + 159min, true, true, true));
+    assert(watchdog.shouldForceOff(start + 160min, true, true, true));
 
-    // The new ON cycle gets a new full timeout, and ordinary hysteresis
-    // will hold it OFF until the temperature goes below the configured min.
-    watchdog.observe(start + 70min, true);
-    assert(!watchdog.shouldForceOff(start + 129min, true, true, true));
-    assert(watchdog.shouldForceOff(start + 130min, true, true, true));
+    // No forced decision on stale readings, even if the timer has expired.
+    assert(!watchdog.shouldForceOff(start + 161min, true, false, true));
 
-    // Explicitly reject unusable negative/zero durations.
+    // A brief dip below min does not reset an already started timer;
+    // but forced OFF is still only allowed with an in-range reading.
+    assert(!watchdog.shouldForceOff(start + 162min, true, true, false));
+    assert(watchdog.shouldForceOff(start + 163min, true, true, true));
+
+    // After OFF, new heating cycles must independently reach min again.
+    watchdog.observe(start + 164min, false, true, true);
+    assert(!watchdog.shouldForceOff(start + 170min, true, true, false));
+    assert(!watchdog.shouldForceOff(start + 190min, true, true, true));
+    assert(!watchdog.shouldForceOff(start + 249min, true, true, true));
+    assert(watchdog.shouldForceOff(start + 250min, true, true, true));
+
     bool rejected = false;
     try {
         HeaterOnTimeWatchdog invalid(0min);
@@ -43,8 +49,6 @@ int main()
     }
     assert(rejected);
 
-    // Fan circulation uses the configurable accumulated-OFF interval and
-    // extra-ON pulse duration, not hard-coded 20/5-minute timings.
     FanCirculationScheduler fan(start, 2min, 3min);
     assert(!fan.shouldRun(start, false, false));
     fan.noteApplied(start, false);

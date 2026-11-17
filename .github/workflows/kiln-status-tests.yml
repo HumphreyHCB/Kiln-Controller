@@ -14,6 +14,8 @@ on:
       - "feature/github-kiln-status"
       - "feature/heater-on-time-watchdog"
     paths:
+      - "src/**"
+      - "config/**"
       - "scripts/**"
       - "systemd/**"
       - "tests/**"
@@ -48,6 +50,10 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I src tests/test_kiln_control_timing.cpp src/KilnControlLogic.cpp -o /tmp/kiln-thermostat-timing-tests
           /tmp/kiln-thermostat-timing-tests
+      - name: Controller event persistence C++ test
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I src tests/test_kiln_event_logger.cpp -o /tmp/kiln-event-logger-tests
+          /tmp/kiln-event-logger-tests
       - name: Build kiln C++ executable
         run: |
           cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Debug

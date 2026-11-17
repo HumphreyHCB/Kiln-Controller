@@ -3,6 +3,7 @@
 // The independent kiln-relay-master must retain its 10-second watchdog.
 #include "KilnControlLogic.hpp"
 #include "FanCirculationScheduler.hpp"
+#include "HeaterOnTimeWatchdog.hpp"
 #include "KilnRunLogger.hpp"
 #include "RelayController.hpp"
 #include "TemperatureHumidityCollector.hpp"
@@ -100,9 +101,15 @@ int run()
     std::cerr << "[KILN] Sensor stale >20s: all OFF. Stale >=60s: exit 75 for recovery.\n";
 
     const auto startTime = Clock::now();
-    FanCirculationScheduler fanCirculation(startTime);
-    std::cerr << "[FAN] Fan follows heater/humidifier, plus 5-minute circulation "
-                 "after 20 accumulated minutes OFF.\n";
+    FanCirculationScheduler fanCirculation(
+        startTime, logic.fanOffBeforePulse(), logic.fanPulseLength());
+    HeaterOnTimeWatchdog heaterWatchdog(logic.maxContinuousHeaterOn());
+    std::cerr << "[FAN] Fan follows heater/humidifier, plus "
+              << logic.fanPulseLength().count() << "-minute circulation after "
+              << logic.fanOffBeforePulse().count() << " accumulated minutes OFF.\n";
+    std::cerr << "[HEATER WATCHDOG] Maximum continuous heater ON: "
+              << logic.maxContinuousHeaterOn().count()
+              << " minutes; force OFF only with fresh, in-range temperature.\n";
     auto lastSensorTime = startTime;
     std::optional<Clock::time_point> lastAnnouncedReceipt;
     bool wasInSensorFault = false;
@@ -133,22 +140,46 @@ int run()
         // both heater and humidifier OFF (and we explicitly turn the fan OFF).
         const std::optional<SensorReading> controlReading =
             fresh ? reading : std::nullopt;
-        const ControlDecision decision = logic.decide(
-            controlReading, relays.Heater.IsOn(), relays.Humidifier.IsOn());
+        const bool heaterWasOn = relays.Heater.IsOn();
+        ControlDecision decision = logic.decide(
+            controlReading, heaterWasOn, relays.Humidifier.IsOn());
+
+        // A healthy heater may fail to reach its normal OFF setpoint and
+        // remain commanded ON for hours. Once the configured continuous
+        // run time is reached AND temperature is already in the permitted
+        // range, force the heater OFF for the normal hysteresis cooling
+        // phase. Never use a stale sensor reading to make this decision.
+        const bool watchdogExpired = heaterWatchdog.shouldForceOff(
+            now, heaterWasOn, fresh,
+            fresh && logic.temperatureInRange(reading->temperature));
+        if (!decision.sensorFault &&
+            decision.heater != ControlAction::TurnOff &&
+            watchdogExpired) {
+            decision.heater = ControlAction::TurnOff;
+            std::cerr << "[HEATER WATCHDOG] Maximum continuous ON time ("
+                      << logic.maxContinuousHeaterOn().count()
+                      << " minutes) reached at " << reading->temperature
+                      << " C; forcing heater OFF. Normal thermostat resumes "
+                         "heating only when temperature falls below min.\n";
+        }
 
         if (decision.sensorFault) {
             relays.AllOff();  // Also acts as the relay-master heartbeat.
+            heaterWatchdog.observe(Clock::now(), false);
             fanCirculation.reset(Clock::now()); // Never circulate on invalid data.
             if (!wasInSensorFault) {
                 std::cerr << "[SENSOR] Missing, stale or invalid reading: all relays OFF.\n";
             }
         } else {
             apply(relays.Heater, decision.heater);
+            // Track the GPIO-owner's acknowledged commanded state, not
+            // merely the last thermostat decision.
+            heaterWatchdog.observe(Clock::now(), relays.Heater.IsOn());
             apply(relays.Humidifier, decision.humidifier);
 
             // Heating and humidification each require air circulation.
-            // A separate timer guarantees a five-minute ventilation pulse
-            // after 20 cumulative minutes of fan OFF time.
+            // A separate timer guarantees a configurable ventilation pulse
+            // after the configured accumulated fan-OFF interval.
             const bool heaterOn = relays.Heater.IsOn();
             const bool humidifierOn = relays.Humidifier.IsOn();
             const bool fanOn = relays.Fan.IsOn();
@@ -161,7 +192,9 @@ int run()
             fanCirculation.noteApplied(Clock::now(), wantFan);
 
             if (!wasPulsing && fanCirculation.pulseActive()) {
-                std::cerr << "[FAN] Starting 5-minute circulation pulse.\n";
+                std::cerr << "[FAN] Starting "
+                          << logic.fanPulseLength().count()
+                          << "-minute circulation pulse.\n";
             } else if (wasPulsing && !fanCirculation.pulseActive()) {
                 std::cerr << "[FAN] Circulation pulse completed.\n";
             }

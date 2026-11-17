@@ -2,7 +2,7 @@
 """Generate eight bounded 24-hour / 7-day PNG plots from existing kiln CSVs.
 
 Read-only with respect to kiln control, relays and logs. Only the fixed output
-images and metadata under docs/plots/ are overwritten. Sensor-stale values are
+images and metadata under logs/plot-cache/ are overwritten. Sensor-stale values are
 not drawn as valid kiln temperature/humidity; missing CSV intervals stay gaps.
 
 The current CSV schema already includes all needed fields. No C++ changes.
@@ -19,7 +19,9 @@ from typing import Optional
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
 LOGS = ROOT / "logs"
-OUTPUT = ROOT / "docs/plots"
+# Render into ignored logs/ so the Pi's Git working tree stays CLEAN after
+# the GitHub API commits images remotely. Local generated files must not block git pull.
+OUTPUT = ROOT / "logs/plot-cache"
 CONFIG = ROOT / "config/kiln-control.json"
 RELAYS = ("heater_on", "humidifier_on", "fan_on")
 WINDOWS = {"24h": (24 * 3600, 120), "7d": (7 * 86400, 900)}

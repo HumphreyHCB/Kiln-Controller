@@ -4,6 +4,7 @@
 #include "KilnControlLogic.hpp"
 #include "FanCirculationScheduler.hpp"
 #include "HeaterOnTimeWatchdog.hpp"
+#include "KilnEventLogger.hpp"
 #include "KilnRunLogger.hpp"
 #include "RelayController.hpp"
 #include "TemperatureHumidityCollector.hpp"
@@ -87,6 +88,7 @@ int run()
     relays.AllOff();
     KilnControlLogic logic;
     KilnRunLogger logger;
+    KilnEventLogger eventLogger;
     TemperatureHumidityCollector collector;
     try {
         collector.start();
@@ -107,12 +109,13 @@ int run()
     std::cerr << "[FAN] Fan follows heater/humidifier, plus "
               << logic.fanPulseLength().count() << "-minute circulation after "
               << logic.fanOffBeforePulse().count() << " accumulated minutes OFF.\n";
-    std::cerr << "[HEATER WATCHDOG] Maximum continuous heater ON: "
+    std::cerr << "[HEATER WATCHDOG] Max heater ON after first reaching min: "
               << logic.maxContinuousHeaterOn().count()
               << " minutes; force OFF only with fresh, in-range temperature.\n";
     auto lastSensorTime = startTime;
     std::optional<Clock::time_point> lastAnnouncedReceipt;
     bool wasInSensorFault = false;
+    bool sensorStaleIncidentRecorded = false;
     int exitCode = EXIT_SUCCESS;
 
     while (!stopRequested) {
@@ -144,19 +147,19 @@ int run()
         ControlDecision decision = logic.decide(
             controlReading, heaterWasOn, relays.Humidifier.IsOn());
 
-        // A healthy heater may fail to reach its normal OFF setpoint and
-        // remain commanded ON for hours. Once the configured continuous
-        // run time is reached AND temperature is already in the permitted
-        // range, force the heater OFF for the normal hysteresis cooling
-        // phase. Never use a stale sensor reading to make this decision.
+        // Start the timeout when this heating cycle FIRST reaches the
+        // configured minimum with a fresh reading, not at heater startup.
+        // The time then runs continuously until the heater is truly OFF.
+        // Expire only when the current fresh reading is within range.
         const bool watchdogExpired = heaterWatchdog.shouldForceOff(
             now, heaterWasOn, fresh,
             fresh && logic.temperatureInRange(reading->temperature));
-        if (!decision.sensorFault &&
-            decision.heater != ControlAction::TurnOff &&
-            watchdogExpired) {
+        const bool forceHeaterOffForTimeout =
+            !decision.sensorFault &&
+            decision.heater != ControlAction::TurnOff && watchdogExpired;
+        if (forceHeaterOffForTimeout) {
             decision.heater = ControlAction::TurnOff;
-            std::cerr << "[HEATER WATCHDOG] Maximum continuous ON time ("
+            std::cerr << "[HEATER WATCHDOG] Maximum in-range ON time ("
                       << logic.maxContinuousHeaterOn().count()
                       << " minutes) reached at " << reading->temperature
                       << " C; forcing heater OFF. Normal thermostat resumes "
@@ -165,8 +168,20 @@ int run()
 
         if (decision.sensorFault) {
             relays.AllOff();  // Also acts as the relay-master heartbeat.
-            heaterWatchdog.observe(Clock::now(), false);
+            heaterWatchdog.observe(Clock::now(), false, false, false);
             fanCirculation.reset(Clock::now()); // Never circulate on invalid data.
+            // Write a durable incident after 20 seconds without fresh data,
+            // even if the C++ process later recovers before GitHub next polls.
+            if (!sensorStaleIncidentRecorded &&
+                now - lastSensorTime >= kStopHeatingAfterNoSensor) {
+                const auto secs = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - lastSensorTime).count();
+                eventLogger.record("sensor_stale",
+                    "Bluetooth temperature/humidity reading unavailable or stale for " +
+                    std::to_string(secs) +
+                    " seconds; all relays commanded OFF.");
+                sensorStaleIncidentRecorded = true;
+            }
             if (!wasInSensorFault) {
                 std::cerr << "[SENSOR] Missing, stale or invalid reading: all relays OFF.\n";
             }
@@ -174,7 +189,18 @@ int run()
             apply(relays.Heater, decision.heater);
             // Track the GPIO-owner's acknowledged commanded state, not
             // merely the last thermostat decision.
-            heaterWatchdog.observe(Clock::now(), relays.Heater.IsOn());
+            heaterWatchdog.observe(
+                Clock::now(), relays.Heater.IsOn(), fresh,
+                fresh && logic.temperatureInRange(reading->temperature));
+            if (forceHeaterOffForTimeout) {
+                eventLogger.record("heater_timeout",
+                    "Heater forced OFF after " +
+                    std::to_string(logic.maxContinuousHeaterOn().count()) +
+                    " minutes since first reaching minimum temperature; "
+                    "current temperature " + std::to_string(reading->temperature) +
+                    " C. Normal hysteresis resumes below configured minimum.");
+            }
+            sensorStaleIncidentRecorded = false;
             apply(relays.Humidifier, decision.humidifier);
 
             // Heating and humidification each require air circulation.

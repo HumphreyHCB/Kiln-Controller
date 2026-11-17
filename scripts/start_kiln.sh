@@ -36,9 +36,11 @@ fi
 rm -f /run/kiln-controller-manual-arm
 echo "[KILN START] Removing old CMake build directory (source/config/logs untouched)." >&2
 cmake -E rm -rf build
-echo "[KILN START] Configuring and compiling a fresh C++ executable." >&2
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel 2
+echo "[KILN START] Configuring and compiling as humphrey (service user)." >&2
+# All generated files MUST be writable by the unprivileged service user:
+# the recovery supervisor also runs 'cmake --build build' later.
+sudo -u humphrey cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+sudo -u humphrey cmake --build build --parallel 2
 
 # The volatile root-only marker remains required for each deliberate start.
 echo "[KILN START] Build succeeded; authorising this run and starting kiln." >&2

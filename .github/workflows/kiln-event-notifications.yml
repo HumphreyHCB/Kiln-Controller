@@ -37,6 +37,10 @@ jobs:
               summary = "✅ Kiln controller started successfully."
           elif "Possible unexpected power loss" in original or "ended without a clean stop" in original:
               summary = "🚨 Possible unexpected shutdown — kiln requires manual inspection."
+          elif "Heater ON-time watchdog forced heating OFF" in original:
+              summary = "🚨 Heater ran too long and was automatically switched OFF."
+          elif "Bluetooth temperature/humidity reading stale" in original:
+              summary = "🚨 Kiln temperature/humidity sensor data became stale; relays commanded OFF."
           else:
               summary = "🚨 Kiln fault detected — check the controller."
           repo = os.environ["GH_REPO"]

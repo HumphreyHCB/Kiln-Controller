@@ -28,12 +28,12 @@ if systemctl is-active --quiet kiln-controller.service ||
 fi
 
 echo "[KILN STOP] Controller stopped; requesting explicit ALL_OFF acknowledgement." >&2
-if ! python3 force_relays_off.py; then
-    echo "[KILN STOP] DANGER: Could not confirm relay-master ALL_OFF. Inspect physically!" >&2
+if ! python3 scripts/confirm_stopped_relays.py; then
+    echo "[KILN STOP] DANGER: ALL_OFF / readback of four relay channels not confirmed. Inspect physically!" >&2
     exit 1
 fi
 
-echo "[KILN STOP] Heater/humidifier/fan commanded OFF by relay master." >&2
+echo "[KILN STOP] All four relay channels report OFF in the GPIO-owner software state." >&2
 echo "[KILN STOP] Re-enabling monitoring and updating GitHub Issue now." >&2
 if ! systemctl enable --now kiln-github-status.timer; then
     echo "[KILN STOP] WARNING: Could not enable GitHub status timer." >&2

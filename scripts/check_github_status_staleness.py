@@ -35,13 +35,15 @@ def alert_needed(body, now, comment_bodies):
     last = heartbeat(body)
     if last is not None and dt.timedelta(0) <= now - last <= MAX_AGE:
         return None
-    if last is not None and now < last:
-        return None  # Allow for minor clock skew; no false power-loss alarm.
+    if last is not None and last - now <= dt.timedelta(minutes=5) and now < last:
+        return None  # Small clock skew is not a missing heartbeat.
     stamp = last.strftime("%Y-%m-%dT%H:%M:%SZ") if last else "unknown"
     marker = f"{ALERT_MARKER}{stamp} -->"
     if any(marker in text for text in comment_bodies):
         return None
     age = (f"{int((now - last).total_seconds() // 60)} minutes"
+           if last and now >= last else
+           "invalid future timestamp (check Pi clock)"
            if last else "unknown (heartbeat marker missing)")
     return (
         "@HumphreyHCB 🚨 **Kiln GitHub status is stale.**\n\n"

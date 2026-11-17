@@ -1,0 +1,11 @@
+[Unit]
+Description=Commit updated kiln charts to GitHub at 00:00 and 12:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00 UTC
+Persistent=true
+AccuracySec=5min
+Unit=kiln-plot-publisher.service
+
+[Install]
+WantedBy=timers.target

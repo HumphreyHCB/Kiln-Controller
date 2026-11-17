@@ -83,7 +83,8 @@ class PersistedEventTests(unittest.TestCase):
     def test_missing_marker_and_future_timestamp(self):
         self.assertIn("unknown", remote.alert_needed("# no report", NOW, []))
         future = "<!-- KILN_STATUS_REPORT_UTC: 2026-11-17T15:00:00Z -->"
-        self.assertIsNone(remote.alert_needed(future, NOW, []))
+        self.assertIn("invalid future timestamp",
+                      remote.alert_needed(future, NOW, []))
 
 
 if __name__ == "__main__":

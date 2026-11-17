@@ -1,13 +1,18 @@
 {
   "temperature": {
-    "min": 40.5,
-    "max": 48.0,
-    "stopBeforeMax": 1.5
+    "min": 38,
+    "max": 46,
+    "stopBeforeMax": 2.5,
+    "maxContinuousHeaterOnMinutes": 60
   },
   "humidity": {
-    "min": 70.0,
-    "max": 78.0,
-    "stopBeforeMax": 5.0
+    "min": 70,
+    "max": 80,
+    "stopBeforeMax": 5
   },
-  "maxReadingAgeSeconds": 60
+  "maxReadingAgeSeconds": 60,
+  "fanCirculation": {
+    "offBeforePulseMinutes": 20,
+    "pulseMinutes": 5
+  }
 }

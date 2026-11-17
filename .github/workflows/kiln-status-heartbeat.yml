@@ -1,0 +1,20 @@
+name: Warn if kiln GitHub status stops updating
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Issue heartbeat freshness
+        env:
+          KILN_GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/check_github_status_staleness.py

@@ -34,6 +34,25 @@ KilnControlLogic::KilnControlLogic(const std::string& configPath)
     }
     maxReadingAge_ = std::chrono::seconds(maxAgeSeconds);
 
+    // Older local config files remain valid with these explicit defaults.
+    // Durations are positive whole minutes to avoid zero/negative loops.
+    const int heaterLimitMinutes = temp.value("maxContinuousHeaterOnMinutes", 60);
+    if (heaterLimitMinutes <= 0) {
+        throw std::invalid_argument("temperature.maxContinuousHeaterOnMinutes must be positive");
+    }
+    maxContinuousHeaterOn_ = std::chrono::minutes(heaterLimitMinutes);
+
+    if (config.contains("fanCirculation")) {
+        const auto& fan = config.at("fanCirculation");
+        const int offMinutes = fan.value("offBeforePulseMinutes", 20);
+        const int pulseMinutes = fan.value("pulseMinutes", 5);
+        if (offMinutes <= 0 || pulseMinutes <= 0) {
+            throw std::invalid_argument("fanCirculation times must be positive");
+        }
+        fanOffBeforePulse_ = std::chrono::minutes(offMinutes);
+        fanPulseLength_ = std::chrono::minutes(pulseMinutes);
+    }
+
     // The ON threshold is min, and the OFF threshold is max - stopBeforeMax.
     // Require a positive gap between them (hysteresis).
     auto validate = [](const Range& range, const char* name) {

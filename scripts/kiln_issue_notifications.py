@@ -19,6 +19,7 @@ import urllib.request
 import uuid
 
 from kiln_service_state import boot_id, read_state, last_csv_measurement
+from kiln_control_events import recent_events
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "logs/kiln_github_notification_state.json"
@@ -213,6 +214,33 @@ def notify(title, issue_body, token, *, now=None):
               f"**Reported problems:** {problems}\n\n"
               "Review the current live Issue and the Pi service logs.")
     state["last_fault_active"] = bool(fault)
+
+    # The C++ controller writes brief faults to a durable JSONL journal.
+    # This catches brief sensor outages and heater timeout events even when
+    # the kiln has recovered before the next 20-minute GitHub publication.
+    seen_control = state.setdefault("seen_control_events", [])
+    for event in recent_events(limit=120):
+        event_id = event["id"]
+        if event_id in seen_control:
+            continue
+        seen_control.append(event_id)
+        if event["kind"] == "heater_timeout":
+            queue(state, "control:" + event_id,
+                  "### 🚨 Heater ON-time watchdog forced heating OFF\n\n"
+                  f"**Detected:** {event['detected_utc']}  \n"
+                  f"**Details:** {event['detail']}\n\n"
+                  "Normal thermostat hysteresis resumes once temperature "
+                  "drops below the configured minimum. Check the heater "
+                  "and insulation if these events recur.")
+        elif event["kind"] == "sensor_stale":
+            queue(state, "control:" + event_id,
+                  "### 🚨 Bluetooth temperature/humidity reading stale\n\n"
+                  f"**Detected:** {event['detected_utc']}  \n"
+                  f"**Details:** {event['detail']}\n\n"
+                  "The C++ controller commands all relays OFF on invalid "
+                  "sensor data; the existing recovery supervisor may retry "
+                  "Bluetooth. Inspect the kiln if the fault continues.")
+    state["seen_control_events"] = seen_control[-400:]
 
     # Save pending alerts before contacting GitHub so failed network calls
     # can be retried at the next timer tick.

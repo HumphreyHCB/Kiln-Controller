@@ -20,6 +20,7 @@ import urllib.request
 from kiln_service_state import boot_id, read_state, last_csv_measurement
 from verify_relays_off import confirm_off
 from kiln_issue_notifications import notify
+from kiln_control_events import issue_history
 
 UTC = dt.timezone.utc
 ROOT = Path(__file__).resolve().parents[1]
@@ -278,6 +279,10 @@ def report(now=None):
 | Humidifier ON (% of samples) | {display(duty('humidifier_on'), '%', 1)} |
 | Fan ON (% of samples) | {display(duty('fan_on'), '%', 1)} |
 | Sensor-fault samples | {sum(r.get('sensor_fault') == '1' for r in recent)} |
+
+### Recent controller safety events
+
+{issue_history()}
 
 ### Shutdown and restart history
 

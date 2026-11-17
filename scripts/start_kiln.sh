@@ -66,4 +66,8 @@ fi
 if ! systemctl start kiln-github-status.service; then
     echo "[KILN START] WARNING: GitHub status update failed; inspect monitoring journal." >&2
 fi
+echo "[KILN START] Posting operator action comment to GitHub Issue #1." >&2
+if ! sudo -u humphrey /usr/bin/python3 scripts/post_operator_comment.py start; then
+    echo "[KILN START] WARNING: Operator comment failed; control action already completed." >&2
+fi
 echo "[KILN START] To stop: sudo bash scripts/stop_kiln.sh" >&2

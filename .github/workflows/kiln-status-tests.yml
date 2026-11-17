@@ -44,6 +44,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libsdbus-c++-dev libgpiod-dev nlohmann-json3-dev
+      - name: Thermostat and JSON timing integration tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I src tests/test_kiln_control_timing.cpp src/KilnControlLogic.cpp -o /tmp/kiln-thermostat-timing-tests
+          /tmp/kiln-thermostat-timing-tests
       - name: Build kiln C++ executable
         run: |
           cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Debug

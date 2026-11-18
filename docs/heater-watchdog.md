@@ -64,8 +64,10 @@ and 5 minutes respectively.
   commands **all four relays OFF**, records a
   **heater_timeout_shutdown** event, and exits with a fatal status. The
   supervisor confirms ALL_OFF and does not retry; the service remains stopped
-  until an operator inspects the kiln and uses the manual start command.
-  Change this positive integer in the temperature section of the JSON config.
+  until an operator inspects the kiln and uses the manual start command. The
+  count survives Bluetooth recovery restarts; a deliberate manual start clears
+  it after the build succeeds. Change this positive integer in the temperature
+  section of the JSON config.
 - The watchdog writes a **[HEATER WATCHDOG]** line to the systemd journal
   **and** a persistent incident to logs/kiln_control_events.jsonl when it
   forces the heater OFF. GitHub Issue #1 shows the event history and creates

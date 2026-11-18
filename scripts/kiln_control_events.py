@@ -41,6 +41,7 @@ def recent_events(limit=100):
 def issue_history(limit=6):
     labels = {
         "heater_timeout": "⚠️ Heater forced OFF — ON-time limit reached",
+        "heater_timeout_shutdown": "🚨 Kiln shut down — repeated heater timeout",
         "sensor_stale": "🚨 Bluetooth sensor reading stale — relays commanded OFF",
     }
     events = recent_events(limit)

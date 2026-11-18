@@ -2,6 +2,7 @@
 // A separate shell supervisor restarts the ENTIRE process after sensor failures.
 // The independent kiln-relay-master must retain its 10-second watchdog.
 #include "KilnControlLogic.hpp"
+#include "ConsecutiveHeaterTimeoutCounter.hpp"
 #include "FanCirculationScheduler.hpp"
 #include "HeaterOnTimeWatchdog.hpp"
 #include "KilnEventLogger.hpp"
@@ -87,8 +88,23 @@ int run()
     // The GPIO master owns the pins and starts each connection with all OFF.
     relays.AllOff();
     KilnControlLogic logic;
-    KilnRunLogger logger;
+    KilnRunLogger logger(logic.temperatureMin(), logic.temperatureMax(),
+                         logic.temperatureStopBeforeMax(),
+                         logic.maxContinuousHeaterOn(),
+                         logic.maxConsecutiveHeaterTimeouts());
     KilnEventLogger eventLogger;
+    ConsecutiveHeaterTimeoutCounter heaterTimeoutCounter;
+    if (heaterTimeoutCounter.count() >= logic.maxConsecutiveHeaterTimeouts()) {
+        relays.AllOff();
+        eventLogger.record("heater_timeout_shutdown",
+            "Startup blocked because the persisted consecutive heater-timeout count " +
+            std::to_string(heaterTimeoutCounter.count()) +
+            " has reached the configured limit. Use the manual start command after "
+            "operator inspection to reset the count.");
+        std::cerr << "[HEATER WATCHDOG] Persisted timeout limit reached; "
+                     "all relays OFF. Operator intervention is required.\\n";
+        return kFatalExit;
+    }
     TemperatureHumidityCollector collector;
     try {
         collector.start();
@@ -116,6 +132,7 @@ int run()
     std::optional<Clock::time_point> lastAnnouncedReceipt;
     bool wasInSensorFault = false;
     bool sensorStaleIncidentRecorded = false;
+    int consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
     int exitCode = EXIT_SUCCESS;
 
     while (!stopRequested) {
@@ -131,6 +148,7 @@ int run()
             break;
         }
         const bool fresh = freshAndPlausible(reading, now);
+        bool shutdownForRepeatedHeaterTimeout = false;
 
         // A repeated cached value is NOT a new Bluetooth advertisement.
         if (fresh && (!lastAnnouncedReceipt || reading->receivedAt > *lastAnnouncedReceipt)) {
@@ -193,36 +211,70 @@ int run()
                 Clock::now(), relays.Heater.IsOn(), fresh,
                 fresh && logic.temperatureInRange(reading->temperature));
             if (forceHeaterOffForTimeout) {
+                heaterTimeoutCounter.recordTimeout();
+                consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
+                const bool shutdownNow =
+                    consecutiveHeaterTimeouts >= logic.maxConsecutiveHeaterTimeouts();
                 eventLogger.record("heater_timeout",
                     "Heater forced OFF after " +
                     std::to_string(logic.maxContinuousHeaterOn().count()) +
-                    " minutes since first reaching minimum temperature; "
+                    " minutes since first reaching minimum temperature; " +
                     "current temperature " + std::to_string(reading->temperature) +
-                    " C. Normal hysteresis resumes below configured minimum.");
+                    " C; consecutive timeout " +
+                    std::to_string(consecutiveHeaterTimeouts) + " of " +
+                    std::to_string(logic.maxConsecutiveHeaterTimeouts()) + ".");
+                if (shutdownNow) {
+                    relays.AllOff();
+                    fanCirculation.reset(Clock::now());
+                    eventLogger.record("heater_timeout_shutdown",
+                        "Kiln shut down after " +
+                        std::to_string(consecutiveHeaterTimeouts) +
+                        " consecutive heater-timeout trips. All relays commanded OFF; "
+                        "manual operator intervention is required before another start.");
+                    std::cerr << "[HEATER WATCHDOG] "
+                              << consecutiveHeaterTimeouts
+                              << " consecutive heater-timeout trips reached; "
+                                 "all relays OFF and stopping for manual intervention.\n";
+                    shutdownForRepeatedHeaterTimeout = true;
+                    exitCode = kFatalExit;
+                }
+            } else if (heaterWasOn &&
+                       decision.heater == ControlAction::TurnOff &&
+                       !relays.Heater.IsOn()) {
+                // A normal thermostat completion breaks the timeout streak.
+                heaterTimeoutCounter.reset();
+                consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
             }
             sensorStaleIncidentRecorded = false;
-            apply(relays.Humidifier, decision.humidifier);
 
-            // Heating and humidification each require air circulation.
-            // A separate timer guarantees a configurable ventilation pulse
-            // after the configured accumulated fan-OFF interval.
-            const bool heaterOn = relays.Heater.IsOn();
-            const bool humidifierOn = relays.Humidifier.IsOn();
-            const bool fanOn = relays.Fan.IsOn();
-            const bool wasPulsing = fanCirculation.pulseActive();
-            const auto fanNow = Clock::now();
-            const bool wantFan = fanCirculation.shouldRun(
-                fanNow, heaterOn || humidifierOn, fanOn);
-            if (wantFan && !fanOn) relays.Fan.On();
-            if (!wantFan && fanOn) relays.Fan.Off();
-            fanCirculation.noteApplied(Clock::now(), wantFan);
+            if (shutdownForRepeatedHeaterTimeout) {
+                // Do not let the rest of the normal control pass switch any
+                // relay back ON after the all-relay shutdown command.
+                relays.AllOff();
+            } else {
+                apply(relays.Humidifier, decision.humidifier);
 
-            if (!wasPulsing && fanCirculation.pulseActive()) {
-                std::cerr << "[FAN] Starting "
-                          << logic.fanPulseLength().count()
-                          << "-minute circulation pulse.\n";
-            } else if (wasPulsing && !fanCirculation.pulseActive()) {
-                std::cerr << "[FAN] Circulation pulse completed.\n";
+                // Heating and humidification each require air circulation.
+                // A separate timer guarantees a configurable ventilation pulse
+                // after the configured accumulated fan-OFF interval.
+                const bool heaterOn = relays.Heater.IsOn();
+                const bool humidifierOn = relays.Humidifier.IsOn();
+                const bool fanOn = relays.Fan.IsOn();
+                const bool wasPulsing = fanCirculation.pulseActive();
+                const auto fanNow = Clock::now();
+                const bool wantFan = fanCirculation.shouldRun(
+                    fanNow, heaterOn || humidifierOn, fanOn);
+                if (wantFan && !fanOn) relays.Fan.On();
+                if (!wantFan && fanOn) relays.Fan.Off();
+                fanCirculation.noteApplied(Clock::now(), wantFan);
+
+                if (!wasPulsing && fanCirculation.pulseActive()) {
+                    std::cerr << "[FAN] Starting "
+                              << logic.fanPulseLength().count()
+                              << "-minute circulation pulse.\n";
+                } else if (wasPulsing && !fanCirculation.pulseActive()) {
+                    std::cerr << "[FAN] Circulation pulse completed.\n";
+                }
             }
             if (wasInSensorFault) {
                 std::cerr << "[SENSOR] Fresh data resumed. Normal control restored.\n";
@@ -254,8 +306,15 @@ int run()
                   << "Heater ON: " << relays.Heater.IsOn() << '\n'
                   << "Humidifier ON: " << relays.Humidifier.IsOn() << '\n'
                   << "Fan ON: " << relays.Fan.IsOn() << '\n'
-                  << "Sensor fault: " << decision.sensorFault << "\n\n"
+                  << "Sensor fault: " << decision.sensorFault << "\n"
+                  << "Consecutive heater timeouts: "
+                  << consecutiveHeaterTimeouts << "/"
+                  << logic.maxConsecutiveHeaterTimeouts() << "\n\n"
                   << std::flush;
+
+        if (shutdownForRepeatedHeaterTimeout) {
+            break; // Fatal exit; supervisor confirms ALL_OFF and does not retry.
+        }
 
         // No fresh advertisements for 60 seconds => exit for FULL PROCESS
         // restart. This also works if Bluetooth never supplied a first reading.

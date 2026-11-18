@@ -15,7 +15,8 @@ unchanged:
     "min": 38.0,
     "max": 46.0,
     "stopBeforeMax": 2.5,
-    "maxContinuousHeaterOnMinutes": 60
+    "maxContinuousHeaterOnMinutes": 60,
+    "maxConsecutiveHeaterTimeouts": 3
   },
   "humidity": {
     "min": 70.0,
@@ -34,10 +35,12 @@ unchanged:
 **If your Pi has custom temperature/humidity targets (e.g. 40.5–48°C and
 70–78% RH), preserve those values!** The JSON above illustrates the
 repository defaults; this PR does not intentionally change your thermostat
-targets. Each new timing must be a positive integer minute count.
+targets. Each duration must be a positive integer minute count, and
+maxConsecutiveHeaterTimeouts must be a positive integer count.
 
 For an older local JSON that does not contain the new fields, the controller
-uses fallback values of 60 minutes, 20 minutes, and 5 minutes respectively.
+uses fallback values of 60 minutes, 3 consecutive heater timeouts, 20 minutes,
+and 5 minutes respectively.
 
 ### Heater timeout: maxContinuousHeaterOnMinutes
 
@@ -57,11 +60,20 @@ uses fallback values of 60 minutes, 20 minutes, and 5 minutes respectively.
 - After a watchdog OFF, the regular hysteresis logic leaves the heater OFF
   until temperature falls below temperature.min, at which point a new heating
   cycle may start. The continuous-ON timer resets at each actual OFF.
+- **maxConsecutiveHeaterTimeouts: 3** — after three consecutive watchdog
+  trips without an intervening normal thermostat OFF cycle, the controller
+  commands **all four relays OFF**, records a
+  **heater_timeout_shutdown** event, and exits with a fatal status. The
+  supervisor confirms ALL_OFF and does not retry; the service remains stopped
+  until an operator inspects the kiln and uses the manual start command. The
+  count survives Bluetooth recovery restarts; a deliberate manual start clears
+  it after the build succeeds. Change this positive integer in the temperature
+  section of the JSON config.
 - The watchdog writes a **[HEATER WATCHDOG]** line to the systemd journal
   **and** a persistent incident to logs/kiln_control_events.jsonl when it
   forces the heater OFF. GitHub Issue #1 shows the event history and creates
   a one-shot @mention notification on the next successful status publish.
-  There is no automatic power cut or system service restart.
+  The repeated-timeout shutdown gets its own event and alert.
 
 **Example for a 40.5–48°C range, stopBeforeMax 1.5°C, 60-minute timeout:**
 
@@ -79,6 +91,14 @@ This software watchdog cannot act if the C++ process/OS is hung; the separate
 relay master's independent 10-second *communication* timeout helps on
 stalled communications, but **neither is a substitute for an independent,
 correctly rated physical overtemperature cutout and safe heater wiring**.
+
+### CSV temperature settings
+
+Every CSV data row now repeats the configured temperature minimum, maximum,
+stop-before-max margin, the resulting heater OFF threshold
+(maximum minus margin), the continuous heater ON limit, and the consecutive
+timeout limit. This keeps the setpoints beside the measurements when comparing
+runs created with different configs.
 
 ### Fan circulation: offBeforePulseMinutes and pulseMinutes
 
@@ -137,7 +157,9 @@ The new stop script is not on the Pi until the PR is deployed.
   Brief dropouts are kept even if the process recovers before the next GitHub
   20-minute report.
 - A **heater_timeout** incident is also persisted after the relay-master
-  acknowledges the forced heater OFF.
+  acknowledges the forced heater OFF. Reaching the configured consecutive
+  timeout limit records **heater_timeout_shutdown** after all relays are
+  commanded OFF.
 - Both incidents appear under **Recent controller safety events** in Issue #1,
   and cause event comments + a GitHub Actions bot @mention on the next
   successful Pi status publication. They do not create a comment every 5 seconds.

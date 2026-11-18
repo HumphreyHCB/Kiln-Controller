@@ -224,7 +224,15 @@ def notify(title, issue_body, token, *, now=None):
         if event_id in seen_control:
             continue
         seen_control.append(event_id)
-        if event["kind"] == "heater_timeout":
+        if event["kind"] == "heater_timeout_shutdown":
+            queue(state, "control:" + event_id,
+                  "### 🚨 Kiln stopped after repeated heater timeouts\n\n"
+                  f"**Detected:** {event['detected_utc']}  \n"
+                  f"**Details:** {event['detail']}\n\n"
+                  "All relays were commanded OFF and the controller will not "
+                  "restart automatically. Inspect the kiln and controller "
+                  "before using the manual start command.")
+        elif event["kind"] == "heater_timeout":
             queue(state, "control:" + event_id,
                   "### 🚨 Heater ON-time watchdog forced heating OFF\n\n"
                   f"**Detected:** {event['detected_utc']}  \n"

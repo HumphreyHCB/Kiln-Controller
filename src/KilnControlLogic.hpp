@@ -38,6 +38,15 @@ public:
     [[nodiscard]] std::chrono::minutes maxContinuousHeaterOn() const {
         return maxContinuousHeaterOn_;
     }
+    [[nodiscard]] int maxConsecutiveHeaterTimeouts() const {
+        return maxConsecutiveHeaterTimeouts_;
+    }
+    [[nodiscard]] double temperatureMin() const { return temperature_.min; }
+    [[nodiscard]] double temperatureMax() const { return temperature_.max; }
+    [[nodiscard]] double temperatureStopBeforeMax() const { return temperature_.stopBeforeMax; }
+    [[nodiscard]] double temperatureStopAt() const {
+        return temperature_.max - temperature_.stopBeforeMax;
+    }
     [[nodiscard]] std::chrono::minutes fanOffBeforePulse() const {
         return fanOffBeforePulse_;
     }
@@ -59,6 +68,7 @@ private:
     Range humidity_{};
     std::chrono::seconds maxReadingAge_{60};
     std::chrono::minutes maxContinuousHeaterOn_{60};
+    int maxConsecutiveHeaterTimeouts_{3};
     std::chrono::minutes fanOffBeforePulse_{20};
     std::chrono::minutes fanPulseLength_{5};
 

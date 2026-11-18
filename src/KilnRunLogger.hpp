@@ -18,7 +18,17 @@
 // Construct it once in main(), then call log() after each control decision.
 class KilnRunLogger {
 public:
-    explicit KilnRunLogger(const std::string& directory = "logs")
+    explicit KilnRunLogger(double temperatureMinC,
+                             double temperatureMaxC,
+                             double temperatureStopBeforeMaxC,
+                             std::chrono::minutes maxContinuousHeaterOn,
+                             int maxConsecutiveHeaterTimeouts,
+                             const std::string& directory = "logs")
+        : temperatureMinC_(temperatureMinC),
+          temperatureMaxC_(temperatureMaxC),
+          temperatureStopBeforeMaxC_(temperatureStopBeforeMaxC),
+          maxContinuousHeaterOnMinutes_(maxContinuousHeaterOn.count()),
+          maxConsecutiveHeaterTimeouts_(maxConsecutiveHeaterTimeouts)
     {
         std::filesystem::create_directories(directory);
 
@@ -44,7 +54,12 @@ public:
         }
         file_.imbue(std::locale::classic()); // Always use a '.' decimal separator
         file_ << "timestamp_utc,temperature_c,humidity_percent,reading_age_seconds,"
-                 "heater_on,humidifier_on,fan_on,sensor_fault,cpu_temperature_c\n";
+                 "heater_on,humidifier_on,fan_on,sensor_fault,cpu_temperature_c,"
+                 "configured_temperature_min_c,configured_temperature_max_c,"
+                 "configured_temperature_stop_before_max_c,"
+                 "configured_temperature_heater_off_c,"
+                 "max_continuous_heater_on_minutes,"
+                 "max_consecutive_heater_timeouts\n";
         file_.flush();
     }
 
@@ -86,7 +101,12 @@ public:
         if (const auto cpuTemp = readCpuTemperatureC()) {
             file_ << std::fixed << std::setprecision(2) << *cpuTemp;
         }
-        file_ << '\n';
+        file_ << ',' << std::fixed << std::setprecision(2)
+              << temperatureMinC_ << ',' << temperatureMaxC_ << ','
+              << temperatureStopBeforeMaxC_ << ','
+              << temperatureMaxC_ - temperatureStopBeforeMaxC_
+              << ',' << maxContinuousHeaterOnMinutes_
+              << ',' << maxConsecutiveHeaterTimeouts_ << '\n';
 
         // Save each row immediately, rather than waiting for normal shutdown.
         file_.flush();
@@ -109,6 +129,11 @@ private:
         return static_cast<double>(millidegrees) / 1000.0;
     }
 
+    double temperatureMinC_;
+    double temperatureMaxC_;
+    double temperatureStopBeforeMaxC_;
+    long long maxContinuousHeaterOnMinutes_;
+    int maxConsecutiveHeaterTimeouts_;
     std::string path_;
     std::ofstream file_;
 };

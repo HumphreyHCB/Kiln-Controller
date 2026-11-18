@@ -35,7 +35,8 @@ unchanged:
 **If your Pi has custom temperature/humidity targets (e.g. 40.5–48°C and
 70–78% RH), preserve those values!** The JSON above illustrates the
 repository defaults; this PR does not intentionally change your thermostat
-targets. Each new timing must be a positive integer minute count.
+targets. Each duration must be a positive integer minute count, and
+maxConsecutiveHeaterTimeouts must be a positive integer count.
 
 For an older local JSON that does not contain the new fields, the controller
 uses fallback values of 60 minutes, 3 consecutive heater timeouts, 20 minutes,

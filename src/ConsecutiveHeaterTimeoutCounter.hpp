@@ -4,6 +4,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <unistd.h>
 
 // Persists the consecutive heater-timeout count across Bluetooth recovery

@@ -28,7 +28,9 @@ if systemctl is-active --quiet kiln-controller.service ||
 fi
 
 echo "[KILN STOP] Controller stopped; requesting explicit ALL_OFF acknowledgement." >&2
-if ! python3 scripts/confirm_stopped_relays.py; then
+# The relay verification helper also opens the supervisor flock file. Run it
+# as the service user so it cannot leave a root-owned lock that blocks restart.
+if ! sudo -u humphrey /usr/bin/python3 scripts/confirm_stopped_relays.py; then
     echo "[KILN STOP] DANGER: ALL_OFF / readback of four relay channels not confirmed. Inspect physically!" >&2
     exit 1
 fi

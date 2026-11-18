@@ -42,6 +42,14 @@ KilnControlLogic::KilnControlLogic(const std::string& configPath)
     }
     maxContinuousHeaterOn_ = std::chrono::minutes(heaterLimitMinutes);
 
+    const int consecutiveTimeoutLimit =
+        temp.value("maxConsecutiveHeaterTimeouts", 3);
+    if (consecutiveTimeoutLimit <= 0) {
+        throw std::invalid_argument(
+            "temperature.maxConsecutiveHeaterTimeouts must be positive");
+    }
+    maxConsecutiveHeaterTimeouts_ = consecutiveTimeoutLimit;
+
     if (config.contains("fanCirculation")) {
         const auto& fan = config.at("fanCirculation");
         const int offMinutes = fan.value("offBeforePulseMinutes", 20);

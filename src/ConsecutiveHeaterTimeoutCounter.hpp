@@ -16,8 +16,12 @@ public:
         std::filesystem::path path = "logs/kiln_heater_timeout_streak.txt")
         : path_(std::move(path))
     {
+        if (!std::filesystem::exists(path_)) return; // No previous timeout streak.
         std::ifstream input(path_);
-        if (!input) return; // No previous timeout streak.
+        if (!input) {
+            throw std::runtime_error(
+                "Cannot read persisted heater-timeout count: " + path_.string());
+        }
         if (!(input >> count_) || count_ < 0) {
             throw std::runtime_error(
                 "Invalid persisted consecutive heater-timeout count: " +

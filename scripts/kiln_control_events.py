@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_FILE = ROOT / "logs/kiln_control_events.jsonl"
-KNOWN_KINDS = {"heater_timeout", "sensor_stale"}
+KNOWN_KINDS = {"heater_timeout", "heater_timeout_shutdown", "sensor_stale"}
 
 
 def recent_events(limit=100):

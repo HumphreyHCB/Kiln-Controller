@@ -3,7 +3,8 @@
     "min": 39,
     "max": 46,
     "stopBeforeMax": 2.5,
-    "maxContinuousHeaterOnMinutes": 160
+    "maxContinuousHeaterOnMinutes": 160,
+    "maxConsecutiveHeaterTimeouts": 3
   },
   "humidity": {
     "min": 72,

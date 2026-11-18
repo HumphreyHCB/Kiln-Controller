@@ -2,6 +2,7 @@
 // A separate shell supervisor restarts the ENTIRE process after sensor failures.
 // The independent kiln-relay-master must retain its 10-second watchdog.
 #include "KilnControlLogic.hpp"
+#include "ConsecutiveHeaterTimeoutCounter.hpp"
 #include "FanCirculationScheduler.hpp"
 #include "HeaterOnTimeWatchdog.hpp"
 #include "KilnEventLogger.hpp"
@@ -92,6 +93,18 @@ int run()
                          logic.maxContinuousHeaterOn(),
                          logic.maxConsecutiveHeaterTimeouts());
     KilnEventLogger eventLogger;
+    ConsecutiveHeaterTimeoutCounter heaterTimeoutCounter;
+    if (heaterTimeoutCounter.count() >= logic.maxConsecutiveHeaterTimeouts()) {
+        relays.AllOff();
+        eventLogger.record("heater_timeout_shutdown",
+            "Startup blocked because the persisted consecutive heater-timeout count " +
+            std::to_string(heaterTimeoutCounter.count()) +
+            " has reached the configured limit. Use the manual start command after "
+            "operator inspection to reset the count.");
+        std::cerr << "[HEATER WATCHDOG] Persisted timeout limit reached; "
+                     "all relays OFF. Operator intervention is required.\\n";
+        return kFatalExit;
+    }
     TemperatureHumidityCollector collector;
     try {
         collector.start();
@@ -119,7 +132,7 @@ int run()
     std::optional<Clock::time_point> lastAnnouncedReceipt;
     bool wasInSensorFault = false;
     bool sensorStaleIncidentRecorded = false;
-    int consecutiveHeaterTimeouts = 0;
+    int consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
     int exitCode = EXIT_SUCCESS;
 
     while (!stopRequested) {
@@ -198,7 +211,8 @@ int run()
                 Clock::now(), relays.Heater.IsOn(), fresh,
                 fresh && logic.temperatureInRange(reading->temperature));
             if (forceHeaterOffForTimeout) {
-                ++consecutiveHeaterTimeouts;
+                heaterTimeoutCounter.recordTimeout();
+                consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
                 const bool shutdownNow =
                     consecutiveHeaterTimeouts >= logic.maxConsecutiveHeaterTimeouts();
                 eventLogger.record("heater_timeout",
@@ -228,7 +242,8 @@ int run()
                        decision.heater == ControlAction::TurnOff &&
                        !relays.Heater.IsOn()) {
                 // A normal thermostat completion breaks the timeout streak.
-                consecutiveHeaterTimeouts = 0;
+                heaterTimeoutCounter.reset();
+                consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
             }
             sensorStaleIncidentRecorded = false;
 

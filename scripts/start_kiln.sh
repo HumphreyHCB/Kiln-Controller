@@ -34,13 +34,16 @@ fi
 
 # Keep the manual arm absent during the build. A failed build cannot heat.
 rm -f /run/kiln-controller-manual-arm
-echo "[KILN START] Removing old CMake build directory (source/config/logs untouched)." >&2
+echo "[KILN START] Removing old CMake build directory; preserving configuration and run logs." >&2
 cmake -E rm -rf build
 echo "[KILN START] Configuring and compiling as humphrey (service user)." >&2
 # All generated files MUST be writable by the unprivileged service user:
 # the recovery supervisor also runs 'cmake --build build' later.
 sudo -u humphrey cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 sudo -u humphrey cmake --build build --parallel 2
+
+# A deliberate operator start acknowledges and resets any prior timeout streak.
+rm -f logs/kiln_heater_timeout_streak.txt
 
 # The volatile root-only marker remains required for each deliberate start.
 echo "[KILN START] Build succeeded; authorising this run and starting kiln." >&2

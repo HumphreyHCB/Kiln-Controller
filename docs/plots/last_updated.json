@@ -1,18 +1,18 @@
 {
-  "generated_at_utc": "2026-11-22T12:00:05Z",
+  "generated_at_utc": "2026-11-23T00:00:05Z",
   "windows": {
     "24h": {
-      "start_utc": "2026-11-21T12:00:05Z",
-      "end_utc": "2026-11-22T12:00:05Z",
-      "csv_rows": 14116,
-      "bins_with_logs": 589,
+      "start_utc": "2026-11-22T00:00:05Z",
+      "end_utc": "2026-11-23T00:00:05Z",
+      "csv_rows": 17266,
+      "bins_with_logs": 720,
       "total_bins": 720
     },
     "7d": {
-      "start_utc": "2026-11-15T12:00:05Z",
-      "end_utc": "2026-11-22T12:00:05Z",
-      "csv_rows": 76391,
-      "bins_with_logs": 436,
+      "start_utc": "2026-11-16T00:00:05Z",
+      "end_utc": "2026-11-23T00:00:05Z",
+      "csv_rows": 76952,
+      "bins_with_logs": 437,
       "total_bins": 672
     }
   },

@@ -9,7 +9,11 @@
   "humidity": {
     "min": 72,
     "max": 85,
-    "stopBeforeMax": 3
+    "stopBeforeMax": 3,
+    "noIncreaseTimeoutMinutes": 15,
+    "minimumRisePercentagePoints": 1.0,
+    "retryDelayMinutes": 5,
+    "maxConsecutiveNoIncreaseAttempts": 3
   },
   "maxReadingAgeSeconds": 60,
   "fanCirculation": {

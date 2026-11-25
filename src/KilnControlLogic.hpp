@@ -53,6 +53,21 @@ public:
     [[nodiscard]] std::chrono::minutes fanPulseLength() const {
         return fanPulseLength_;
     }
+    [[nodiscard]] std::chrono::minutes humidifierNoIncreaseTimeout() const {
+        return humidifierNoIncreaseTimeout_;
+    }
+    [[nodiscard]] double humidifierMinimumRisePercentagePoints() const {
+        return humidifierMinimumRisePercentagePoints_;
+    }
+    [[nodiscard]] std::chrono::minutes humidifierRetryDelay() const {
+        return humidifierRetryDelay_;
+    }
+    [[nodiscard]] int maxConsecutiveHumidifierNoIncreaseAttempts() const {
+        return maxConsecutiveHumidifierNoIncreaseAttempts_;
+    }
+    [[nodiscard]] double humidityStopAt() const {
+        return humidity_.max - humidity_.stopBeforeMax;
+    }
     [[nodiscard]] bool temperatureInRange(double temperature) const {
         return temperature >= temperature_.min && temperature <= temperature_.max;
     }
@@ -71,6 +86,10 @@ private:
     int maxConsecutiveHeaterTimeouts_{3};
     std::chrono::minutes fanOffBeforePulse_{20};
     std::chrono::minutes fanPulseLength_{5};
+    std::chrono::minutes humidifierNoIncreaseTimeout_{15};
+    double humidifierMinimumRisePercentagePoints_{1.0};
+    std::chrono::minutes humidifierRetryDelay_{5};
+    int maxConsecutiveHumidifierNoIncreaseAttempts_{3};
 
     static ControlAction decideOne(
         double measured,

@@ -9,7 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_FILE = ROOT / "logs/kiln_control_events.jsonl"
-KNOWN_KINDS = {"heater_timeout", "heater_timeout_shutdown", "sensor_stale"}
+KNOWN_KINDS = {
+    "heater_timeout", "heater_timeout_shutdown", "sensor_stale",
+    "humidifier_no_response",
+}
 
 
 def recent_events(limit=100):
@@ -43,10 +46,11 @@ def issue_history(limit=6):
         "heater_timeout": "⚠️ Heater forced OFF — ON-time limit reached",
         "heater_timeout_shutdown": "🚨 Kiln shut down — repeated heater timeout",
         "sensor_stale": "🚨 Bluetooth sensor reading stale — relays commanded OFF",
+        "humidifier_no_response": "🚨 Humidifier locked OFF — no humidity response",
     }
     events = recent_events(limit)
     if not events:
-        return "No heater-timeout or sensor-staleness events recorded."
+        return "No heater-timeout, sensor-staleness, or humidifier no-response events recorded."
     return "\n".join(
         f"- **{labels[e['kind']]}** — {e['detected_utc']}. {e['detail']}"
         for e in reversed(events)

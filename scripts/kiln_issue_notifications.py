@@ -248,6 +248,15 @@ def notify(title, issue_body, token, *, now=None):
                   "The C++ controller commands all relays OFF on invalid "
                   "sensor data; the existing recovery supervisor may retry "
                   "Bluetooth. Inspect the kiln if the fault continues.")
+        elif event["kind"] == "humidifier_no_response":
+            queue(state, "control:" + event_id,
+                  "### 🚨 Humidifier stopped after repeated no-response checks\n\n"
+                  f"**Detected:** {event['detected_utc']}  \n"
+                  f"**Details:** {event['detail']}\n\n"
+                  "The humidifier is locked OFF for this controller run. "
+                  "Temperature control and heating continue normally. Check/refill "
+                  "the water tank; manually restart the controller after inspection "
+                  "to re-enable humidification.")
     state["seen_control_events"] = seen_control[-400:]
 
     # Save pending alerts before contacting GitHub so failed network calls

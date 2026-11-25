@@ -5,6 +5,7 @@
 #include "ConsecutiveHeaterTimeoutCounter.hpp"
 #include "FanCirculationScheduler.hpp"
 #include "HeaterOnTimeWatchdog.hpp"
+#include "HumidifierNoResponseWatchdog.hpp"
 #include "KilnEventLogger.hpp"
 #include "KilnRunLogger.hpp"
 #include "RelayController.hpp"
@@ -93,6 +94,11 @@ int run()
                          logic.maxContinuousHeaterOn(),
                          logic.maxConsecutiveHeaterTimeouts());
     KilnEventLogger eventLogger;
+    HumidifierNoResponseWatchdog humidifierWatchdog(
+        logic.humidifierNoIncreaseTimeout(),
+        logic.humidifierMinimumRisePercentagePoints(),
+        logic.humidifierRetryDelay(),
+        logic.maxConsecutiveHumidifierNoIncreaseAttempts());
     ConsecutiveHeaterTimeoutCounter heaterTimeoutCounter;
     if (heaterTimeoutCounter.count() >= logic.maxConsecutiveHeaterTimeouts()) {
         relays.AllOff();
@@ -128,6 +134,14 @@ int run()
     std::cerr << "[HEATER WATCHDOG] Max heater ON after first reaching min: "
               << logic.maxContinuousHeaterOn().count()
               << " minutes; force OFF only with fresh, in-range temperature.\n";
+    std::cerr << "[HUMIDIFIER WATCHDOG] Require at least "
+              << logic.humidifierMinimumRisePercentagePoints()
+              << " RH percentage-point rise within each "
+              << logic.humidifierNoIncreaseTimeout().count()
+              << "-minute ON window; retry after "
+              << logic.humidifierRetryDelay().count() << " minutes; lock out after "
+              << logic.maxConsecutiveHumidifierNoIncreaseAttempts()
+              << " consecutive failures.\n";
     auto lastSensorTime = startTime;
     std::optional<Clock::time_point> lastAnnouncedReceipt;
     bool wasInSensorFault = false;
@@ -186,6 +200,8 @@ int run()
 
         if (decision.sensorFault) {
             relays.AllOff();  // Also acts as the relay-master heartbeat.
+            (void)humidifierWatchdog.observe(
+                Clock::now(), false, false, false, 0.0);
             heaterWatchdog.observe(Clock::now(), false, false, false);
             fanCirculation.reset(Clock::now()); // Never circulate on invalid data.
             // Write a durable incident after 20 seconds without fresh data,
@@ -246,6 +262,65 @@ int run()
                 consecutiveHeaterTimeouts = heaterTimeoutCounter.count();
             }
             sensorStaleIncidentRecorded = false;
+
+            const bool temperatureAllowsHumidification =
+                logic.temperatureInRange(reading->temperature);
+            const bool humidityTargetReached =
+                reading->humidity >= logic.humidityStopAt();
+            if (temperatureAllowsHumidification && humidityTargetReached) {
+                // A normal thermostat target is evidence the humidifier
+                // responded, so it clears prior failed attempts.
+                humidifierWatchdog.reportTargetReached();
+            }
+            const bool humidifierWasOn = relays.Humidifier.IsOn();
+            const auto humidifierObservation = humidifierWatchdog.observe(
+                Clock::now(), humidifierWasOn, fresh,
+                temperatureAllowsHumidification &&
+                    decision.humidifier != ControlAction::TurnOff,
+                reading->humidity);
+            if (humidifierObservation.failedAttempt) {
+                std::cerr << "[HUMIDIFIER WATCHDOG] No meaningful RH rise in "
+                          << logic.humidifierNoIncreaseTimeout().count()
+                          << " minutes (baseline "
+                          << humidifierObservation.baselineHumidity
+                          << "%, peak " << humidifierObservation.peakHumidity
+                          << "%). Turning humidifier OFF; consecutive failed attempts: "
+                          << humidifierObservation.consecutiveFailures << "/"
+                          << logic.maxConsecutiveHumidifierNoIncreaseAttempts()
+                          << ".\n";
+                decision.humidifier = ControlAction::TurnOff;
+            }
+            if (humidifierObservation.lockedOutNow) {
+                eventLogger.record(
+                    "humidifier_no_response",
+                    "After " + std::to_string(
+                        logic.maxConsecutiveHumidifierNoIncreaseAttempts()) +
+                    " consecutive " + std::to_string(
+                        logic.humidifierNoIncreaseTimeout().count()) +
+                    "-minute humidifier ON windows, humidity rose by less than " +
+                    std::to_string(
+                        logic.humidifierMinimumRisePercentagePoints()) +
+                    " percentage point. Final no-response window: RH baseline " +
+                    std::to_string(humidifierObservation.baselineHumidity) +
+                    "%, peak " +
+                    std::to_string(humidifierObservation.peakHumidity) +
+                    "% (rise " + std::to_string(
+                        humidifierObservation.peakHumidity -
+                        humidifierObservation.baselineHumidity) +
+                    " percentage points). The humidifier is locked OFF for this "
+                    "controller run; temperature control and heating continue. "
+                    "Check/refill the water tank, then manually restart the controller.");
+                std::cerr << "[HUMIDIFIER WATCHDOG] Repeated no-response limit reached; "
+                             "humidifier locked OFF for this controller run. Heater "
+                             "continues under normal temperature control.\n";
+            }
+            if (humidifierWatchdog.lockedOut()) {
+                decision.humidifier = ControlAction::TurnOff;
+            } else if (!humidifierObservation.failedAttempt &&
+                       decision.humidifier == ControlAction::TurnOn &&
+                       humidifierWatchdog.blocksStart(Clock::now())) {
+                decision.humidifier = ControlAction::TurnOff;
+            }
 
             if (shutdownForRepeatedHeaterTimeout) {
                 // Do not let the rest of the normal control pass switch any

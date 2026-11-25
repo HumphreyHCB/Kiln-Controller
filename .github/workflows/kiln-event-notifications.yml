@@ -41,6 +41,8 @@ jobs:
               summary = "🚨 Heater ran too long and was automatically switched OFF."
           elif "Bluetooth temperature/humidity reading stale" in original:
               summary = "🚨 Kiln temperature/humidity sensor data became stale; relays commanded OFF."
+          elif "Humidifier stopped after repeated no-response checks" in original:
+              summary = "🚨 Humidifier has been locked OFF after repeated no-response checks; check/refill the tank. Heating continues."
           else:
               summary = "🚨 Kiln fault detected — check the controller."
           repo = os.environ["GH_REPO"]

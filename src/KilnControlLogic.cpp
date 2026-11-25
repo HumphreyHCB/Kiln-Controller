@@ -28,6 +28,34 @@ KilnControlLogic::KilnControlLogic(const std::string& configPath)
         humidity.at("stopBeforeMax").get<double>()
     };
 
+    // A humidifier with an empty reservoir can remain commanded ON without
+    // changing the beacon's RH reading. Bound each attempt and its retries.
+    const int noIncreaseMinutes = humidity.value("noIncreaseTimeoutMinutes", 15);
+    const double minimumRise =
+        humidity.value("minimumRisePercentagePoints", 1.0);
+    const int retryMinutes = humidity.value("retryDelayMinutes", 5);
+    const int noIncreaseAttemptLimit =
+        humidity.value("maxConsecutiveNoIncreaseAttempts", 3);
+    if (noIncreaseMinutes <= 0) {
+        throw std::invalid_argument(
+            "humidity.noIncreaseTimeoutMinutes must be positive");
+    }
+    if (!std::isfinite(minimumRise) || minimumRise <= 0.0 || minimumRise > 100.0) {
+        throw std::invalid_argument(
+            "humidity.minimumRisePercentagePoints must be in (0, 100]");
+    }
+    if (retryMinutes <= 0) {
+        throw std::invalid_argument("humidity.retryDelayMinutes must be positive");
+    }
+    if (noIncreaseAttemptLimit <= 0) {
+        throw std::invalid_argument(
+            "humidity.maxConsecutiveNoIncreaseAttempts must be positive");
+    }
+    humidifierNoIncreaseTimeout_ = std::chrono::minutes(noIncreaseMinutes);
+    humidifierMinimumRisePercentagePoints_ = minimumRise;
+    humidifierRetryDelay_ = std::chrono::minutes(retryMinutes);
+    maxConsecutiveHumidifierNoIncreaseAttempts_ = noIncreaseAttemptLimit;
+
     const int maxAgeSeconds = config.at("maxReadingAgeSeconds").get<int>();
     if (maxAgeSeconds <= 0) {
         throw std::invalid_argument("maxReadingAgeSeconds must be positive");

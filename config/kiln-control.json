@@ -3,7 +3,7 @@
     "min": 39,
     "max": 46,
     "stopBeforeMax": 2.5,
-    "maxContinuousHeaterOnMinutes": 160,
+    "maxContinuousHeaterOnMinutes": 100,
     "maxConsecutiveHeaterTimeouts": 3
   },
   "humidity": {
@@ -17,7 +17,7 @@
   },
   "maxReadingAgeSeconds": 60,
   "fanCirculation": {
-    "offBeforePulseMinutes": 40,
+    "offBeforePulseMinutes": 45,
     "pulseMinutes": 5
   }
 }
